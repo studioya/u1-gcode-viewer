@@ -1,0 +1,1611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="3D G-code viewer and pre-print checker for the Snapmaker U1. Files are read locally in your browser.">
+<style>:root{color-scheme:light} body{margin:0} img{max-width:100%} [hidden]{display:none!important}</style>
+<title>U1 G-code Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a workbench. The 3D stage and its layer rail on the left, an inspection column on the right; one column on phones. */
+:root {
+  --bg: #ecebe7;
+  --panel: #fbfaf7;
+  --ink: #1f1e1b;
+  --muted: #67625a;
+  --line: #d8d3c9;
+  --chip: #e4e0d7;
+  --accent: #865814;
+  --accent-ink: #ffffff;
+  --stage: #1b1d20;
+  --stage-ink: #dcd8cf;
+  --stage-muted: #8f8a80;
+  --ok: #2d7a4c;
+  --warn: #a2620b;
+  --bad: #b2362a;
+  --note: #3a679c;
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121315; --panel: #1a1b1e; --ink: #ebe8e2; --muted: #a39e94; --line: #2d2e32; --chip: #26272b;
+    --accent: #d6a24c; --accent-ink: #1b1306; --stage: #15171a; --stage-ink: #dcd8cf; --stage-muted: #8f8a80;
+    --ok: #5db480; --warn: #e3a447; --bad: #e86c5f; --note: #7ea9dc; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121315; --panel: #1a1b1e; --ink: #ebe8e2; --muted: #a39e94; --line: #2d2e32; --chip: #26272b;
+  --accent: #d6a24c; --accent-ink: #1b1306; --stage: #15171a; --stage-ink: #dcd8cf; --stage-muted: #8f8a80;
+  --ok: #5db480; --warn: #e3a447; --bad: #e86c5f; --note: #7ea9dc; color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 var(--f-body); }
+* { box-sizing: border-box; }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app { min-height: 100%; display: flex; flex-direction: column; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 12px 16px; gap: 12px; }
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.mark { font: 700 15px/1 var(--f-display); letter-spacing: .04em; background: var(--ink); color: var(--bg); padding: 8px 9px; border-radius: 6px; }
+.brand h1 { font: 700 19px/1.1 var(--f-display); margin: 0; letter-spacing: -.01em; }
+.brand .sub { margin: 2px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); padding: 7px 12px; border-radius: 7px; cursor: pointer; font-weight: 500; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { filter: brightness(1.07); }
+.btn.small { padding: 4px 9px; font-size: 13px; }
+.work { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 12px; min-height: 0; }
+.stage-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
+.stage { position: relative; flex: 1; min-height: 420px; background: var(--stage); border-radius: 10px; overflow: hidden; color: var(--stage-ink); }
+.stage canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.toolbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; pointer-events: none; }
+.toolbar > * { pointer-events: auto; }
+.seg { display: inline-flex; background: rgba(20,22,25,.82); border: 1px solid rgba(255,255,255,.12); border-radius: 7px; overflow: hidden; }
+.seg button, .seg label { background: transparent; border: 0; color: var(--stage-ink); padding: 5px 9px; font-size: 12.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.seg button[aria-pressed="true"] { background: rgba(214,162,76,.22); color: #f4d9a6; }
+.seg button + button, .seg label + label { border-left: 1px solid rgba(255,255,255,.10); }
+.seg input[type="checkbox"] { accent-color: #d6a24c; margin: 0; }
+.seg select { background: transparent; border: 0; color: var(--stage-ink); padding: 5px 6px; font-size: 12.5px; }
+.seg select option { color: #111; }
+.legend { position: absolute; right: 10px; top: 52px; max-width: 220px; max-height: calc(100% - 130px); overflow: auto; background: rgba(20,22,25,.82); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 8px 10px; font-size: 12px; }
+.legend h4 { margin: 0 0 6px; font: 500 11px/1.2 var(--f-body); letter-spacing: .08em; text-transform: uppercase; color: var(--stage-muted); }
+.legend .li { display: flex; align-items: center; gap: 7px; padding: 2px 0; cursor: pointer; background: none; border: 0; color: var(--stage-ink); width: 100%; text-align: left; font-size: 12px; }
+.legend .li.off { opacity: .38; }
+.legend .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; border: 1px solid rgba(255,255,255,.25); }
+.legend .ramp { height: 10px; border-radius: 3px; background: linear-gradient(90deg, #21336f, #1a8c9e, #8cc74d, #f9cc33, #e64d2e); }
+.legend .rampnums { display: flex; justify-content: space-between; font: 11px var(--f-mono); color: var(--stage-muted); margin-top: 3px; }
+.hud { position: absolute; left: 10px; bottom: 10px; max-width: calc(100% - 20px); background: rgba(20,22,25,.86); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 7px 10px; font: 12px/1.5 var(--f-mono); color: var(--stage-ink); display: flex; flex-wrap: wrap; gap: 2px 14px; font-variant-numeric: tabular-nums; }
+.hud b { font-weight: 500; color: #f4d9a6; }
+.hud .k { color: var(--stage-muted); }
+.banner { position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%); background: rgba(214,162,76,.16); border: 1px solid rgba(214,162,76,.45); color: #f1d9ad; padding: 5px 12px; border-radius: 999px; font-size: 12.5px; white-space: nowrap; max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis; }
+.drop, .loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(15,16,18,.84); font-size: 15px; text-align: center; padding: 20px; }
+.drop { border: 2px dashed rgba(214,162,76,.7); border-radius: 10px; font: 600 18px var(--f-display); }
+.prog { width: min(360px, 80%); height: 6px; border-radius: 3px; background: rgba(255,255,255,.12); overflow: hidden; }
+.prog i { display: block; height: 100%; width: 0; background: #d6a24c; transition: width .15s; }
+.loading small { color: var(--stage-muted); font: 12px var(--f-mono); }
+.loading .err { color: #f0a197; max-width: 520px; }
+.rail { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 6px 12px; align-items: center; }
+.rail .lbl { font: 500 11px/1 var(--f-body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.rail .read { font: 12px var(--f-mono); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+.rail .read b { color: var(--ink); font-weight: 500; }
+.rangewrap { position: relative; height: 46px; }
+.rangewrap canvas { position: absolute; left: 0; right: 0; top: 0; width: 100%; height: 28px; display: block; }
+.dual { position: absolute; left: 0; right: 0; bottom: 0; height: 18px; }
+.dual input { position: absolute; left: 0; width: 100%; top: 0; margin: 0; pointer-events: none; -webkit-appearance: none; appearance: none; background: transparent; height: 18px; }
+.dual input::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 14px; height: 18px; border-radius: 4px; background: var(--accent); border: 2px solid var(--panel); cursor: ew-resize; }
+.dual input::-moz-range-thumb { pointer-events: auto; width: 12px; height: 16px; border-radius: 4px; background: var(--accent); border: 2px solid var(--panel); cursor: ew-resize; }
+.dual .track { position: absolute; left: 7px; right: 7px; top: 8px; height: 3px; background: var(--line); border-radius: 2px; }
+.dual .fill { position: absolute; top: 8px; height: 3px; background: var(--accent); border-radius: 2px; }
+.dual input::-webkit-slider-runnable-track { background: transparent; }
+.dual input::-moz-range-track { background: transparent; }
+.mv { width: 100%; accent-color: var(--accent); margin: 0; }
+.railbtns { display: flex; gap: 6px; }
+.side { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+.tabs { display: flex; border-bottom: 1px solid var(--line); overflow-x: auto; flex: none; }
+.tabs button { flex: 1; border: 0; background: none; padding: 10px 8px; font-weight: 500; font-size: 13px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; font: 600 11px/18px var(--f-body); text-align: center; background: var(--chip); color: var(--ink); }
+.count.bad { background: var(--bad); color: #fff; }
+.count.warn { background: var(--warn); color: #fff; }
+.panels { overflow: auto; flex: 1; min-height: 0; }
+.panel { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.panel h3 { margin: 0; font: 600 12px/1.2 var(--f-body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.filehead { display: grid; grid-template-columns: 96px minmax(0,1fr); gap: 12px; align-items: start; }
+.thumb { width: 96px; height: 96px; border-radius: 8px; background: var(--stage); display: grid; place-items: center; overflow: hidden; color: var(--stage-muted); font-size: 11px; text-align: center; }
+.thumb img { width: 100%; height: 100%; object-fit: contain; }
+.filehead .name { font: 600 15px/1.25 var(--f-display); overflow-wrap: anywhere; margin: 0 0 4px; }
+.filehead p { margin: 0; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.kv { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px 14px; margin: 0; }
+.kv div { min-width: 0; }
+.kv dt { font-size: 11.5px; color: var(--muted); }
+.kv dd { margin: 1px 0 0; font: 500 16px/1.25 var(--f-mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kv dd small { font: 12px var(--f-body); color: var(--muted); }
+.stack { display: flex; height: 12px; border-radius: 3px; overflow: hidden; background: var(--chip); }
+.stack i { display: block; height: 100%; }
+.keyrow { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.keyrow span { display: inline-flex; align-items: center; gap: 5px; }
+.keyrow i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.chart { width: 100%; height: 86px; display: block; }
+.note { font-size: 12.5px; color: var(--muted); margin: 0; }
+.checksum { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill { font: 600 11.5px/1 var(--f-body); padding: 5px 8px; border-radius: 999px; background: var(--chip); }
+.pill.error { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.pill.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.pill.note { background: color-mix(in srgb, var(--note) 18%, transparent); color: var(--note); }
+.pill.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.check { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 10px 14px; position: relative; display: flex; flex-direction: column; gap: 5px; }
+.check::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 2px 2px 0; background: var(--muted); }
+.check.error::before { background: var(--bad); } .check.warn::before { background: var(--warn); } .check.note::before { background: var(--note); } .check.ok::before { background: var(--ok); }
+.check .t { font-weight: 600; font-size: 13.5px; display: flex; gap: 8px; align-items: baseline; justify-content: space-between; }
+.check .t .sev { font: 600 10.5px var(--f-body); letter-spacing: .06em; text-transform: uppercase; flex: none; }
+.check.error .sev { color: var(--bad); } .check.warn .sev { color: var(--warn); } .check.note .sev { color: var(--note); } .check.ok .sev { color: var(--ok); }
+.check p { margin: 0; font-size: 12.5px; color: var(--muted); }
+.check .acts { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 12.5px; }
+.check a { color: var(--accent); }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 12.5px; }
+.tools { display: flex; flex-direction: column; gap: 10px; }
+.tool { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; grid-template-columns: 30px minmax(0,1fr); gap: 4px 10px; }
+.tool .chip { width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--line); display: grid; place-items: center; font: 600 11px var(--f-mono); grid-row: span 2; }
+.tool .nm { font-weight: 600; overflow-wrap: anywhere; }
+.tool .meta { font-size: 12px; color: var(--muted); }
+.tool dl { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px 10px; margin: 6px 0 0; }
+.tool dt { font-size: 11px; color: var(--muted); }
+.tool dd { margin: 0; font: 500 13px var(--f-mono); font-variant-numeric: tabular-nums; }
+.code { position: relative; font: 12px/1.55 var(--f-mono); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; overflow: auto; max-height: 360px; }
+.code .ln { display: grid; grid-template-columns: 64px minmax(0,1fr); white-space: pre; }
+.code .ln > span:first-child { color: var(--muted); text-align: right; padding-right: 10px; user-select: none; }
+.code .ln.cur { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.code .cm { color: var(--muted); }
+.code .tk { color: var(--accent); font-weight: 500; }
+.navrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.cmds { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.cmds td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cmds td:first-child { font-family: var(--f-mono); overflow-wrap: anywhere; }
+.cmds td.n { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.cmds .unk { color: var(--warn); font-weight: 600; }
+details summary { cursor: pointer; font-weight: 500; }
+.objlist { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
+@media (max-width: 960px) {
+  .work { grid-template-columns: minmax(0, 1fr); }
+  .stage { min-height: 0; height: 60vh; flex: none; }
+  .side { max-height: none; }
+  .panels { overflow: visible; }
+}
+@media (max-width: 520px) {
+  .rail { grid-template-columns: minmax(0,1fr); }
+  .rail .read { text-align: left; }
+  .railbtns { flex-wrap: wrap; }
+  .banner { display: none; }
+  .legend { top: 122px; max-height: 32%; max-width: 46%; }
+  .hud { font-size: 11px; gap: 0 10px; }
+  .kv { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (prefers-reduced-motion: reduce) { .prog i { transition: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">U1</span>
+      <div>
+        <h1>G-code Viewer</h1>
+        <p class="sub" id="fileLine">Example print · open your own .gcode to inspect it</p>
+      </div>
+    </div>
+    <div class="railbtns">
+      <button class="btn" id="sampleBtn" type="button">Load example</button>
+      <label class="btn primary" for="fileInput">Open G-code</label>
+      <input type="file" id="fileInput" accept=".gcode,.gco,.g,.txt" hidden>
+    </div>
+  </header>
+
+  <main class="work">
+    <section class="stage-col">
+      <div class="stage" id="stage">
+        <canvas id="gl" aria-label="3D toolpath view"></canvas>
+        <div class="toolbar">
+          <div class="seg" role="group" aria-label="Color by">
+            <button type="button" data-mode="0" aria-pressed="true">Tool</button>
+            <button type="button" data-mode="1" aria-pressed="false">Feature</button>
+            <button type="button" data-mode="2" aria-pressed="false">Speed</button>
+            <button type="button" data-mode="3" aria-pressed="false">Flow</button>
+          </div>
+          <div class="seg" role="group" aria-label="Show">
+            <label><input type="checkbox" id="tgTravel"> Travel</label>
+            <label><input type="checkbox" id="tgSwaps" checked> Swaps</label>
+            <label><input type="checkbox" id="tgColl" checked> Collisions</label>
+            <label><input type="checkbox" id="tgDim"> Dim lower</label>
+          </div>
+          <div class="seg" role="group" aria-label="Camera">
+            <button type="button" data-view="iso">3D</button>
+            <button type="button" data-view="top">Top</button>
+            <button type="button" data-view="front">Front</button>
+            <button type="button" data-view="fit">Fit</button>
+          </div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <div class="hud" id="hud" aria-live="polite"></div>
+        <div class="banner" id="sampleBanner">Example print made in your browser. Open your own file to inspect it.</div>
+        <div class="drop" id="drop" hidden>Drop the G-code file to open it</div>
+        <div class="loading" id="loading" hidden>
+          <div id="loadTitle">Reading file</div>
+          <div class="prog"><i id="progBar"></i></div>
+          <small id="progText"></small>
+        </div>
+      </div>
+      <div class="rail">
+        <span class="lbl">Layers</span>
+        <div class="rangewrap">
+          <canvas id="hist" aria-hidden="true"></canvas>
+          <div class="dual">
+            <div class="track"></div><div class="fill" id="dualFill"></div>
+            <input type="range" id="lmin" min="0" max="0" value="0" aria-label="Lowest layer shown">
+            <input type="range" id="lmax" min="0" max="0" value="0" aria-label="Highest layer shown">
+          </div>
+        </div>
+        <span class="read" id="layerRead"></span>
+        <span class="lbl">Moves</span>
+        <input class="mv" type="range" id="mv" min="0" max="0" value="0" aria-label="Moves in the top layer">
+        <div class="railbtns">
+          <button class="btn small" type="button" id="prevSwap" title="Previous tool swap">◀ Swap</button>
+          <button class="btn small" type="button" id="playBtn" aria-pressed="false">Play</button>
+          <button class="btn small" type="button" id="nextSwap" title="Next tool swap">Swap ▶</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side" aria-label="Inspection">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-summary" aria-controls="p-summary" aria-selected="true">Summary</button>
+        <button role="tab" id="tab-checks" aria-controls="p-checks" aria-selected="false">Checks <span class="count" id="checkCount">0</span></button>
+        <button role="tab" id="tab-tools" aria-controls="p-tools" aria-selected="false">Tools</button>
+        <button role="tab" id="tab-code" aria-controls="p-code" aria-selected="false">G-code</button>
+      </div>
+      <div class="panels">
+        <section class="panel" id="p-summary" role="tabpanel" aria-labelledby="tab-summary"></section>
+        <section class="panel" id="p-checks" role="tabpanel" aria-labelledby="tab-checks" hidden></section>
+        <section class="panel" id="p-tools" role="tabpanel" aria-labelledby="tab-tools" hidden></section>
+        <section class="panel" id="p-code" role="tabpanel" aria-labelledby="tab-code" hidden>
+          <div class="navrow">
+            <button class="btn small" type="button" id="codePrevSwap">◀ Previous swap</button>
+            <button class="btn small" type="button" id="codeNextSwap">Next swap ▶</button>
+          </div>
+          <div class="code" id="codeView"><div class="ln"><span></span><span>Move the slider to see the G-code at that point.</span></div></div>
+          <p class="note" id="codeNote"></p>
+          <details id="cmdDetails"><summary>Commands in this file</summary><div id="cmdTable"></div></details>
+        </section>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script type="text/plain" id="worker-src">
+'use strict';
+const TYPE_NAMES = ['Other','Outer wall','Inner wall','Overhang wall','Sparse infill','Solid infill','Top surface','Bottom surface','Ironing','Bridge','Internal bridge','Gap infill','Skirt','Brim','Support','Support interface','Support transition','Prime tower','Custom'];
+const TYPE_MAP = {'outer wall':1,'external perimeter':1,'inner wall':2,'perimeter':2,'overhang wall':3,'overhang perimeter':3,'sparse infill':4,'internal infill':4,'infill':4,'internal solid infill':5,'solid infill':5,'top surface':6,'top solid infill':6,'bottom surface':7,'ironing':8,'bridge':9,'bridge infill':9,'internal bridge':10,'gap infill':11,'gap fill':11,'skirt':12,'skirt/brim':12,'brim':13,'support':14,'support material':14,'support interface':15,'support material interface':15,'support transition':16,'prime tower':17,'wipe tower':17,'custom':18};
+const DOCK_X = [35.0, 102.7, 170.2, 237.7], DOCK_Y = 332.2;
+const FA = Math.PI * 0.875 * 0.875;
+const HM = 280;
+const BX = 1 << 23, BY = 1 << 24, BZ = 1 << 25, BE = 1 << 4, BF = 1 << 5, BS = 1 << 18, BT = 1 << 19, BR = 1 << 17, BP = 1 << 15, BI = 1 << 8, BJ = 1 << 9;
+const td = new TextDecoder();
+function lineStr(b, s, e) {
+  for (let i = s; i < e; i++) if (b[i] > 127) return td.decode(b.subarray(s, e));
+  return String.fromCharCode.apply(null, b.subarray(s, e));
+}
+
+class Parser {
+  constructor(size) {
+    this.size = size;
+    this.cap = 1 << 16; this.n = 0;
+    this.pts = new Float32Array((this.cap + 1) * 3);
+    this.meta = new Uint8Array(this.cap * 4);
+    this.sf = new Uint16Array(this.cap * 2);
+    this.off = new Float64Array(this.cap);
+    this.lno = new Uint32Array(this.cap);
+    this.tim = new Float32Array(this.cap);
+    this.carry = null; this.lineNo = 0; this.curOff = 0;
+    this.x = 0; this.y = 0; this.z = 0; this.abs = true; this.relE = false; this.eAbs = 0; this.F = 3000;
+    this.posKnown = false;
+    this.tool = -1; this.type = 0; this.width = 0.45; this.height = 0.2;
+    this.layers = [{ z: 0, h: 0, start: 0 }]; this.markers = 0; this.lastMarkerLine = -9;
+    this.zLayers = [{ z: 0, h: 0, start: 0 }]; this.zlZ = -1;
+    this.inTower = false; this.inWipe = false; this.printing = false; this.ended = false;
+    this.accel = 10000; this.vmax = 500; this.scv = 8; this.maxAccelSeen = 0; this.maxFeedSeen = 0;
+    this.temps = new Float32Array(32); this.m104At = new Float64Array(32).fill(-1);
+    this.lastM109 = new Float32Array(32); this.lastM109Line = new Int32Array(32).fill(-99); this.preM109 = new Float32Array(32);
+    this.toolTemps = []; for (let i = 0; i < 32; i++) this.toolTemps.push([]);
+    this.bedTemps = [];
+    this.time = 0;
+    this.QC = 512; this.qN = 0;
+    this.qLen = new Float64Array(this.QC); this.qV2 = new Float64Array(this.QC); this.qA = new Float64Array(this.QC);
+    this.qStart = new Float64Array(this.QC); this.qS = new Float64Array(this.QC); this.qEnd = new Float64Array(this.QC);
+    this.qInst = new Int32Array(this.QC); this.qKind = new Uint8Array(this.QC); this.qTool = new Uint8Array(this.QC); this.qType = new Uint8Array(this.QC);
+    this.pValid = false; this.pux = 0; this.puy = 0; this.puz = 0; this.plen = 0; this.pa = 1; this.pjd = 0; this.pv2 = 0; this.pstart = 0;
+    this.tKind = new Float64Array(4); this.tType = new Float64Array(24); this.tTool = new Float64Array(32); this.tRetract = 0;
+    this.toolChanges = []; this.pendingSwap = -1; this.sinceSwap = 99;
+    this.collisions = []; this.collCount = 0;
+    this.hm = new Float32Array(HM * HM).fill(-1); this.hmMax = -1;
+    this.cfg = Object.create(null); this.cfgCount = 0; this.hdr = Object.create(null);
+    this.thumbs = []; this.thumb = null; this.objects = [];
+    this.cmds = new Map(); this.gCount = new Uint32Array(1000); this.mCount = new Uint32Array(1000); this.tCount = new Uint32Array(64);
+    this.typeNames = TYPE_NAMES.slice();
+    this.netE = new Float64Array(32); this.extLen = new Float64Array(32); this.vol = new Float64Array(32);
+    this.peakFlow = new Float64Array(32); this.toolSegs = new Float64Array(32);
+    this.flowHistT = new Uint32Array(32 * 400); this.speedHist = new Uint32Array(300); this.flowHist = new Uint32Array(400);
+    this.bmin = [1e9, 1e9, 1e9]; this.bmax = [-1e9, -1e9, -1e9]; this.bminI = [0, 0, 0]; this.bmaxI = [0, 0, 0];
+    this.pb = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9];
+    this.travelLen = 0; this.extrudeLen = 0; this.retracts = 0;
+    this.mergeTol = size > 120e6 ? 0.03 : 0.012; this.mergeRun = 0; this.noMerge = true;
+    this.m73R = -1; this.ptN = new Float64Array(3);
+    this.pv = new Float64Array(26); this.pm = 0; this.ni = 0;
+  }
+  grow() {
+    const c = this.cap * 2;
+    const g = (A, k) => { const B = new A.constructor(k); B.set(A); return B; };
+    this.pts = g(this.pts, (c + 1) * 3); this.meta = g(this.meta, c * 4); this.sf = g(this.sf, c * 2);
+    this.off = g(this.off, c); this.lno = g(this.lno, c); this.tim = g(this.tim, c);
+    this.cap = c;
+  }
+  feed(buf, base, last) {
+    let b = buf, off = base;
+    if (this.carry) { const c = new Uint8Array(this.carry.length + buf.length); c.set(this.carry); c.set(buf, this.carry.length); off = base - this.carry.length; b = c; this.carry = null; }
+    let s = 0; const L = b.length;
+    for (;;) {
+      const e = b.indexOf(10, s);
+      if (e < 0) { if (s < L) { if (last) this.line(b, s, L, off + s); else this.carry = b.slice(s); } break; }
+      this.line(b, s, e, off + s); s = e + 1;
+    }
+  }
+  num(b, i, e) {
+    let sign = 1, v = 0, any = false;
+    if (i < e && b[i] === 45) { sign = -1; i++; } else if (i < e && b[i] === 43) i++;
+    while (i < e) { const d = b[i] - 48; if (d < 0 || d > 9) break; v = v * 10 + d; i++; any = true; }
+    if (i < e && b[i] === 46) { i++; let f = 0.1; while (i < e) { const d = b[i] - 48; if (d < 0 || d > 9) break; v += d * f; f *= 0.1; i++; any = true; } }
+    if (i < e && (b[i] === 101 || b[i] === 69) && any) { i++; let es = 1, ev = 0; if (b[i] === 45) { es = -1; i++; } else if (b[i] === 43) i++; while (i < e) { const d = b[i] - 48; if (d < 0 || d > 9) break; ev = ev * 10 + d; i++; } v *= Math.pow(10, es * ev); }
+    this.ni = i; return any ? sign * v : NaN;
+  }
+  params(b, i, e) {
+    let pm = 0; const pv = this.pv;
+    while (i < e) {
+      let c = b[i];
+      if (c >= 97 && c <= 122) c -= 32;
+      if (c >= 65 && c <= 90) { const v = this.num(b, i + 1, e); i = this.ni; if (v === v) { pv[c - 65] = v; pm |= 1 << (c - 65); } else if (c === 84) { } }
+      else i++;
+    }
+    this.pm = pm;
+  }
+  line(b, s, e, off) {
+    this.lineNo++; this.curOff = off;
+    if (e > s && b[e - 1] === 13) e--;
+    while (s < e && (b[s] === 32 || b[s] === 9)) s++;
+    if (s >= e) return;
+    const c = b[s];
+    if (c === 59) { this.comment(b, s + 1, e); return; }
+    let ce = e; for (let i = s; i < e; i++) if (b[i] === 59) { ce = i; break; }
+    if (c === 71 || c === 103) {
+      const code = this.num(b, s + 1, ce); if (code !== code) { this.ext(b, s, ce); return; }
+      this.params(b, this.ni, ce); const ic = code | 0; this.gCount[ic < 1000 ? ic : 999]++;
+      this.G(ic);
+    } else if (c === 77 || c === 109) {
+      const code = this.num(b, s + 1, ce); if (code !== code) { this.ext(b, s, ce); return; }
+      this.params(b, this.ni, ce); const ic = code | 0; this.mCount[ic < 1000 ? ic : 999]++;
+      this.M(ic);
+    } else if ((c === 84 || c === 116) && s + 1 < ce && b[s + 1] >= 48 && b[s + 1] <= 57) {
+      let i = s + 1, t = 0; while (i < ce && b[i] >= 48 && b[i] <= 57) { t = t * 10 + b[i] - 48; i++; }
+      while (i < ce && (b[i] === 32 || b[i] === 9)) i++;
+      if (i < ce) { this.ext(b, s, ce); return; }
+      this.T(t);
+    } else this.ext(b, s, ce);
+  }
+  G(code) {
+    switch (code) {
+      case 0: case 1: this.G01(); break;
+      case 2: case 3: this.arc(code === 2); break;
+      case 4: { this.flush(); const pm = this.pm; const t = (pm & BP) ? this.pv[15] / 1000 : (pm & BS) ? this.pv[18] : 0; if (t > 0) { this.time += t; this.tRetract += 0; } break; }
+      case 10: this.retracts++; break;
+      case 28: this.flush(); this.posKnown = false; break;
+      case 90: this.abs = true; break;
+      case 91: this.abs = false; break;
+      case 92: {
+        const pm = this.pm, pv = this.pv;
+        if (pm & BE) this.eAbs = pv[4];
+        if (pm & (BX | BY | BZ)) { if (pm & BX) this.x = pv[23]; if (pm & BY) this.y = pv[24]; if (pm & BZ) this.z = pv[25]; this.posKnown = false; }
+        break;
+      }
+    }
+  }
+  M(code) {
+    const pm = this.pm, pv = this.pv;
+    switch (code) {
+      case 82: this.relE = false; break;
+      case 83: this.relE = true; break;
+      case 104: case 109: {
+        let t = (pm & BT) ? (pv[19] | 0) : this.tool; if (t < 0) t = 0; if (t > 31) break;
+        const s = (pm & BS) ? pv[18] : (pm & BR) ? pv[17] : NaN; if (s !== s) break;
+        if (code === 109) { this.preM109[t] = this.temps[t]; this.lastM109[t] = s; this.lastM109Line[t] = this.lineNo; }
+        else if (s > this.temps[t] + 20) this.m104At[t] = this.time;
+        this.temps[t] = s;
+        const tt = this.toolTemps[t]; if (tt.length < 12 && tt.indexOf(s) < 0) tt.push(s);
+        break;
+      }
+      case 140: case 190: if (pm & BS) { if (this.bedTemps.length < 40) this.bedTemps.push({ s: pv[18], printing: this.printing, layer: this.markers }); } break;
+      case 204: { let a = NaN; if (pm & BS) a = pv[18]; else if (pm & (BP | BT)) a = Math.min((pm & BP) ? pv[15] : 1e9, (pm & BT) ? pv[19] : 1e9); if (a === a && a > 0) { this.flush(); if (a > this.maxAccelSeen) this.maxAccelSeen = a; this.accel = Math.min(a, 20000); } break; }
+      case 73: if ((pm & BR) && this.m73R < 0) this.m73R = pv[17]; break;
+      case 400: this.flush(); break;
+    }
+  }
+  T(t) {
+    this.tCount[t < 64 ? t : 63]++;
+    this.flush();
+    const from = this.tool;
+    if (from === t) return;
+    if (this.printing && from >= 0 && !this.ended) {
+      const recent = this.lineNo - this.lastM109Line[t] <= 14;
+      const req = recent ? this.lastM109[t] : this.temps[t];
+      const before = recent ? this.preM109[t] : this.temps[t];
+      const pre = req > 0 ? before >= req - 10 : null;
+      const lead = pre && this.m104At[t] >= 0 ? Math.max(0, this.time - this.m104At[t]) : 0;
+      this.toolChanges.push({ i: this.n, from, to: t, line: this.lineNo, off: this.curOff, pre, lead, req, x: this.x, y: this.y, z: this.z, ex: NaN, ey: NaN, ez: NaN });
+      this.pendingSwap = this.toolChanges.length - 1; this.sinceSwap = 0;
+      this.tool = t;
+      if (this.posKnown) this.jumpTo(DOCK_X[t % 4], DOCK_Y, this.z, 1);
+    }
+    this.tool = t; this.noMerge = true;
+  }
+  ext(b, s, e) {
+    let i = s; while (i < e && b[i] !== 32 && b[i] !== 9) i++;
+    const word = String.fromCharCode.apply(null, b.subarray(s, i)).toUpperCase();
+    let r = this.cmds.get(word); if (!r) { r = { n: 0, line: this.lineNo }; this.cmds.set(word, r); } r.n++;
+    this.flush();
+    if (word === 'SET_VELOCITY_LIMIT') {
+      const str = lineStr(b, i, e); let m;
+      if ((m = /ACCEL=([\d.]+)/i.exec(str))) { const a = +m[1]; if (a > this.maxAccelSeen) this.maxAccelSeen = a; this.accel = Math.min(a, 20000); }
+      if ((m = /VELOCITY=([\d.]+)/i.exec(str)) && !/CORNER_VELOCITY=/.test(m[0])) this.vmax = Math.min(+m[1], 500);
+      if ((m = /SQUARE_CORNER_VELOCITY=([\d.]+)/i.exec(str))) this.scv = +m[1];
+    } else if (word === 'EXCLUDE_OBJECT_DEFINE') {
+      if (this.objects.length < 300) {
+        const str = lineStr(b, i, e); const o = { name: '', center: null, poly: null };
+        let m; if ((m = /NAME=(\S+)/i.exec(str))) o.name = m[1];
+        if ((m = /CENTER=([-\d.]+),([-\d.]+)/i.exec(str))) o.center = [+m[1], +m[2]];
+        if ((m = /POLYGON=(\[\[.*\]\])/i.exec(str))) { try { const p = JSON.parse(m[1]); if (p.length > 64) { const st = Math.ceil(p.length / 64); o.poly = p.filter((_, k) => k % st === 0); } else o.poly = p; } catch (err) { } }
+        this.objects.push(o);
+      }
+    } else if (word === 'PRINT_END') { this.ended = true; }
+    else if (!this.printing) { this.posKnown = false; }
+  }
+  comment(b, s, e) {
+    const str = lineStr(b, s, e);
+    if (this.thumb) {
+      if (/^\s*thumbnail(_[A-Za-z]+)? end/.test(str)) { if (this.thumbs.length < 6) this.thumbs.push({ fmt: this.thumb.fmt, w: this.thumb.w, h: this.thumb.h, data: this.thumb.d.join('') }); this.thumb = null; }
+      else this.thumb.d.push(str.trim());
+      return;
+    }
+    const c0 = str.charCodeAt(0);
+    if (c0 === 84 && str.startsWith('TYPE:')) { this.setType(str.slice(5).trim()); return; }
+    if (!this.hdr.generator && str.startsWith(' generated by ')) { this.hdr.generator = str.slice(14).replace(/\s+on \d{4}-\d\d-\d\d.*$/, '').replace(/[:.,]\s*$/, ''); return; }
+    if (c0 === 87) {
+      if (str.startsWith('WIDTH:')) { const w = parseFloat(str.slice(6)); if (w > 0) this.width = w; return; }
+      if (str === 'WIPE_START') { this.inWipe = true; return; }
+      if (str === 'WIPE_END') { this.inWipe = false; return; }
+    }
+    if (c0 === 72 && str.startsWith('HEIGHT:')) { const h = parseFloat(str.slice(7)); if (h > 0) this.height = h; return; }
+    if (c0 === 76 && str === 'LAYER_CHANGE') { this.layerMarker(); return; }
+    if (c0 === 90 && str.startsWith('Z:')) { this.layerZ(parseFloat(str.slice(2))); return; }
+    if (c0 === 32) {
+      if (str.startsWith(' FEATURE: ')) { this.setType(str.slice(10).trim()); return; }
+      if (str.startsWith(' LINE_WIDTH: ')) { const w = parseFloat(str.slice(13)); if (w > 0) this.width = w; return; }
+      if (str.startsWith(' LAYER_HEIGHT: ')) { const h = parseFloat(str.slice(15)); if (h > 0) this.height = h; return; }
+      if (str === ' CHANGE_LAYER') { this.layerMarker(); return; }
+      if (str.startsWith(' Z_HEIGHT: ')) { this.layerZ(parseFloat(str.slice(11))); return; }
+      if (str === ' WIPE_START') { this.inWipe = true; return; }
+      if (str === ' WIPE_END') { this.inWipe = false; return; }
+      if (str.indexOf('WIPE_TOWER_START') >= 0 || str.indexOf('CP TOOLCHANGE START') >= 0 || str.indexOf('CP EMPTY GRID START') >= 0) { this.inTower = true; this.noMerge = true; return; }
+      if (str.indexOf('WIPE_TOWER_END') >= 0 || str.indexOf('CP TOOLCHANGE END') >= 0 || str.indexOf('CP EMPTY GRID END') >= 0) { this.inTower = false; this.noMerge = true; return; }
+      const tm = /^\s*thumbnail(?:_([A-Za-z]+))? begin (\d+)x(\d+)/.exec(str);
+      if (tm) { this.thumb = { fmt: (tm[1] || 'PNG').toUpperCase(), w: +tm[2], h: +tm[3], d: [] }; return; }
+      if (str === ' EXECUTABLE_BLOCK_END') { this.ended = true; return; }
+      const k = str.indexOf(' = ');
+      if (k > 1 && k < 100) {
+        const key = str.slice(1, k).trim();
+        if (this.cfgCount < 5000 && /^[\w \[\]\(\)\^%\/.\-]+$/.test(key)) { this.cfg[key] = str.slice(k + 3, k + 3 + 6000); this.cfgCount++; }
+        return;
+      }
+      if (!this.printing) {
+        const k2 = str.indexOf(': ');
+        if (k2 > 1 && k2 < 60) { const key = str.slice(1, k2).trim(); if (/^[\w \[\]\(\)\^%\-]+$/.test(key)) this.hdr[key] = str.slice(k2 + 2, k2 + 600); }
+      }
+    }
+  }
+  setType(name) {
+    let id = TYPE_MAP[name.toLowerCase()];
+    if (id === undefined) { id = this.typeNames.indexOf(name); if (id < 0) { if (this.typeNames.length < 24) { this.typeNames.push(name); id = this.typeNames.length - 1; } else id = 0; } }
+    if (id !== this.type) this.noMerge = true;
+    this.type = id;
+  }
+  layerMarker() {
+    this.markers++; this.printing = true; this.noMerge = true;
+    this.layers.push({ z: -1, h: this.height, start: this.n }); this.lastMarkerLine = this.lineNo;
+  }
+  layerZ(z) { if (this.markers > 0 && this.lineNo - this.lastMarkerLine <= 4 && z === z) this.layers[this.layers.length - 1].z = z; }
+  G01() {
+    const pm = this.pm, pv = this.pv;
+    if (pm & BF) { this.F = pv[5]; const f = this.F / 60; if (f > this.maxFeedSeen) this.maxFeedSeen = f; }
+    let x = this.x, y = this.y, z = this.z;
+    const hx = pm & BX, hy = pm & BY, hz = pm & BZ;
+    if (this.abs) { if (hx) x = pv[23]; if (hy) y = pv[24]; if (hz) z = pv[25]; }
+    else { if (hx) x += pv[23]; if (hy) y += pv[24]; if (hz) z += pv[25]; }
+    let de = 0;
+    if (pm & BE) { if (this.relE) de = pv[4]; else { de = pv[4] - this.eAbs; this.eAbs = pv[4]; } }
+    if (!hx && !hy && !hz) { if (de !== 0) this.eOnly(de); return; }
+    if (!this.posKnown) {
+      if (this.abs && hx && hy) { this.posKnown = true; this.jumpTo(x, y, z, 3); }
+      else { this.x = x; this.y = y; this.z = z; }
+      return;
+    }
+    this.emit(x, y, z, de);
+  }
+  arc(cw) {
+    const pm = this.pm, pv = this.pv;
+    if (pm & BF) this.F = pv[5];
+    if (!this.posKnown) { this.G01(); return; }
+    const x0 = this.x, y0 = this.y, z0 = this.z;
+    let x = x0, y = y0, z = z0;
+    if (this.abs) { if (pm & BX) x = pv[23]; if (pm & BY) y = pv[24]; if (pm & BZ) z = pv[25]; }
+    else { if (pm & BX) x += pv[23]; if (pm & BY) y += pv[24]; if (pm & BZ) z += pv[25]; }
+    let de = 0; if (pm & BE) { if (this.relE) de = pv[4]; else { de = pv[4] - this.eAbs; this.eAbs = pv[4]; } }
+    const cx = x0 + ((pm & BI) ? pv[8] : 0), cy = y0 + ((pm & BJ) ? pv[9] : 0);
+    const r = Math.hypot(x0 - cx, y0 - cy);
+    let a0 = Math.atan2(y0 - cy, x0 - cx), a1 = Math.atan2(y - cy, x - cx);
+    let sweep = a1 - a0;
+    if (cw) { if (sweep >= -1e-9) sweep -= Math.PI * 2; } else { if (sweep <= 1e-9) sweep += Math.PI * 2; }
+    const segs = Math.max(1, Math.min(720, Math.ceil(Math.abs(sweep) * r / 0.6)));
+    for (let k = 1; k <= segs; k++) {
+      const f = k / segs, a = a0 + sweep * f;
+      const px = k === segs ? x : cx + r * Math.cos(a), py = k === segs ? y : cy + r * Math.sin(a);
+      this.emit(px, py, z0 + (z - z0) * f, de / segs);
+    }
+  }
+  eOnly(de) {
+    this.flush();
+    const tool = this.tool < 0 ? 0 : Math.min(31, this.tool);
+    let v = Math.min(this.F / 60, 60); if (v <= 0) v = 30;
+    const t = Math.abs(de) / v; this.time += t; this.tRetract += t; this.tTool[tool] += t;
+    this.netE[tool] += de; if (de < 0) this.retracts++;
+  }
+  jumpTo(x, y, z, kind) {
+    const idx = this.addRaw(x, y, z, kind, this.tool < 0 ? 0 : Math.min(31, this.tool), 0, 0);
+    this.tim[idx] = this.time;
+    this.x = x; this.y = y; this.z = z; this.noMerge = true;
+  }
+  addRaw(x, y, z, kind, tool, speed, flow) {
+    if (this.n + 2 >= this.cap) this.grow();
+    const n = this.n, p = (n + 1) * 3, m = n * 4;
+    this.pts[p] = x; this.pts[p + 1] = y; this.pts[p + 2] = z;
+    if (n === 0) { this.pts[0] = x; this.pts[1] = y; this.pts[2] = z; }
+    this.meta[m] = tool; this.meta[m + 1] = this.inTower ? 17 : this.type; this.meta[m + 2] = kind;
+    this.meta[m + 3] = Math.min(255, Math.round(this.width * 100));
+    this.sf[n * 2] = Math.min(65535, Math.round(speed)); this.sf[n * 2 + 1] = Math.min(65535, Math.round(flow * 100));
+    this.off[n] = this.curOff; this.lno[n] = this.lineNo;
+    this.n = n + 1; return n;
+  }
+  emit(x, y, z, de) {
+    const x0 = this.x, y0 = this.y, z0 = this.z;
+    const dx = x - x0, dy = y - y0, dz = z - z0;
+    const lxy = Math.sqrt(dx * dx + dy * dy), L = Math.sqrt(lxy * lxy + dz * dz);
+    if (L < 1e-7) { if (de !== 0) this.eOnly(de); return; }
+    let v = this.F / 60; if (v > this.vmax) v = this.vmax; if (!(v > 0)) v = 1;
+    let kind;
+    if (de > 1e-7 && lxy > 1e-7) kind = 0; else if (this.inWipe || de < -1e-7) kind = 2; else kind = 1;
+    const tool = this.tool < 0 ? 0 : (this.tool > 31 ? 31 : this.tool);
+    let flow = 0, idx;
+    if (kind === 0) {
+      flow = de * FA / L * v;
+      const n = this.n, tp = this.inTower ? 17 : this.type, wb = Math.min(255, Math.round(this.width * 100));
+      let merged = false;
+      if (!this.noMerge && n > 0 && this.mergeRun < 48) {
+        const m = (n - 1) * 4;
+        if (this.meta[m + 2] === 0 && this.meta[m] === tool && this.meta[m + 1] === tp && this.meta[m + 3] === wb && Math.abs(this.sf[(n - 1) * 2] - v) <= 1) {
+          const f0 = this.sf[(n - 1) * 2 + 1] / 100;
+          if (Math.abs(f0 - flow) <= Math.max(0.05, f0 * 0.04)) {
+            const P = this.pts, a = (n - 1) * 3, bq = n * 3;
+            const ax = P[a], ay = P[a + 1], az = P[a + 2], bx = P[bq], by = P[bq + 1], bz = P[bq + 2];
+            const acx = x - ax, acy = y - ay, acz = z - az, abx = bx - ax, aby = by - ay, abz = bz - az;
+            const ac2 = acx * acx + acy * acy + acz * acz;
+            if (ac2 > 1e-12 && (abx * dx + aby * dy + abz * dz) > 0) {
+              const cxp = aby * acz - abz * acy, cyp = abz * acx - abx * acz, czp = abx * acy - aby * acx;
+              const dev = Math.sqrt((cxp * cxp + cyp * cyp + czp * czp) / ac2);
+              if (dev < this.mergeTol) { P[bq] = x; P[bq + 1] = y; P[bq + 2] = z; idx = n - 1; merged = true; this.mergeRun++; }
+            }
+          }
+        }
+      }
+      if (!merged) { idx = this.addRaw(x, y, z, 0, tool, v, flow); this.mergeRun = 0; }
+      this.noMerge = false;
+      this.extrudeLen += L; this.extLen[tool] += L; this.vol[tool] += de * FA; this.toolSegs[tool]++;
+      if (L > 0.4) { if (flow > this.peakFlow[tool]) this.peakFlow[tool] = flow; }
+      const fb = Math.min(399, (flow * 4) | 0); this.flowHist[fb]++; this.flowHistT[tool * 400 + fb]++;
+      this.speedHist[Math.min(299, (v / 2) | 0)]++;
+      if (x < this.bmin[0]) { this.bmin[0] = x; this.bminI[0] = idx; } if (x > this.bmax[0]) { this.bmax[0] = x; this.bmaxI[0] = idx; }
+      if (y < this.bmin[1]) { this.bmin[1] = y; this.bminI[1] = idx; } if (y > this.bmax[1]) { this.bmax[1] = y; this.bmaxI[1] = idx; }
+      if (z < this.bmin[2]) { this.bmin[2] = z; this.bminI[2] = idx; } if (z > this.bmax[2]) { this.bmax[2] = z; this.bmaxI[2] = idx; }
+      if (this.printing && !this.ended) {
+        this.stamp(x0, y0, x, y, Math.max(z0, z));
+        const pb = this.pb;
+        if (x < pb[0]) pb[0] = x; if (y < pb[1]) pb[1] = y; if (z < pb[2]) pb[2] = z;
+        if (x > pb[3]) pb[3] = x; if (y > pb[4]) pb[4] = y; if (z > pb[5]) pb[5] = z;
+      }
+      if (this.markers > 0) { const ly = this.layers[this.layers.length - 1]; if (ly.z < 0) ly.z = z; }
+      if (z > this.zlZ + 0.05 && lxy > 0.05) { this.zLayers.push({ z, h: this.zlZ > 0 ? z - this.zlZ : z, start: idx }); this.zlZ = z; }
+      if (this.pendingSwap >= 0) { const sw = this.toolChanges[this.pendingSwap]; sw.ex = x; sw.ey = y; sw.ez = z; this.pendingSwap = -1; }
+    } else {
+      idx = this.addRaw(x, y, z, kind, tool, v, 0); this.noMerge = true;
+      this.travelLen += L;
+      if (this.printing && !this.ended && lxy > 1e-6) this.travelCheck(x0, y0, z0, x, y, z, idx);
+    }
+    this.sinceSwap++;
+    this.tq(L, v, dx / L, dy / L, dz / L, idx, kind, tool);
+    this.netE[tool] += de;
+    this.x = x; this.y = y; this.z = z;
+  }
+  stamp(x0, y0, x1, y1, z) {
+    const dx = x1 - x0, dy = y1 - y0, len = Math.sqrt(dx * dx + dy * dy), st = Math.max(1, Math.ceil(len / 0.5));
+    const hm = this.hm;
+    for (let k = 0; k <= st; k++) {
+      const f = k / st, cx = (x0 + dx * f) | 0, cy = (y0 + dy * f) | 0;
+      if (cx < 0 || cy < 0 || cx >= HM || cy >= HM) continue;
+      const c = cy * HM + cx; if (hm[c] < z) hm[c] = z;
+    }
+    if (z > this.hmMax) this.hmMax = z;
+  }
+  travelCheck(x0, y0, z0, x1, y1, z1, idx) {
+    if (Math.min(z0, z1) >= this.hmMax - 0.15) return;
+    const dx = x1 - x0, dy = y1 - y0, len = Math.sqrt(dx * dx + dy * dy), st = Math.max(1, Math.ceil(len / 0.5));
+    const hm = this.hm;
+    for (let k = 1; k <= st; k++) {
+      const f = k / st, px = x0 + dx * f, py = y0 + dy * f, pz = z0 + (z1 - z0) * f;
+      const cx = px | 0, cy = py | 0; if (cx < 0 || cy < 0 || cx >= HM || cy >= HM) continue;
+      const top = hm[cy * HM + cx];
+      if (top - pz > 0.15) {
+        this.collCount++;
+        if (this.collisions.length < 400) this.collisions.push({ i: idx, x: px, y: py, z: pz, top, tool: this.tool, line: this.lineNo, off: this.curOff, afterSwap: this.sinceSwap < 4 });
+        return;
+      }
+    }
+  }
+  tq(len, v, ux, uy, uz, inst, kind, tool) {
+    const a = this.accel, v2 = v * v, jd = this.scv * this.scv * (Math.SQRT2 - 1) / a;
+    let start = 0;
+    if (this.pValid) {
+      const cos = -(ux * this.pux + uy * this.puy + uz * this.puz);
+      if (cos <= 0.999999) {
+        const c = Math.max(cos, -0.999999), s2 = Math.sqrt(0.5 * (1 - c)), Rjd = s2 / (1 - s2), tan2 = s2 / Math.sqrt(0.5 * (1 + c));
+        start = Math.min(Rjd * jd * a, Rjd * this.pjd * this.pa, 0.5 * len * tan2 * a, 0.5 * this.plen * tan2 * this.pa, v2, this.pv2, this.pstart + 2 * this.pa * this.plen);
+      }
+    }
+    const q = this.qN;
+    this.qLen[q] = len; this.qV2[q] = v2; this.qA[q] = a; this.qStart[q] = start; this.qInst[q] = inst; this.qKind[q] = kind; this.qTool[q] = tool; this.qType[q] = this.inTower ? 17 : this.type;
+    this.qN = q + 1;
+    this.pValid = true; this.pux = ux; this.puy = uy; this.puz = uz; this.plen = len; this.pa = a; this.pjd = jd; this.pv2 = v2; this.pstart = start;
+    if (this.qN >= this.QC) this.flush();
+  }
+  flush() {
+    const n = this.qN; this.pValid = false; if (!n) return;
+    let end = 0;
+    for (let i = n - 1; i >= 0; i--) { this.qEnd[i] = end; const s = Math.min(this.qStart[i], end + 2 * this.qA[i] * this.qLen[i]); this.qS[i] = s; end = s; }
+    let cur = 0;
+    for (let i = 0; i < n; i++) {
+      const a = this.qA[i], len = this.qLen[i];
+      const s = Math.min(this.qS[i], cur), e = Math.min(this.qEnd[i], s + 2 * a * len);
+      const c2 = Math.min(this.qV2[i], (2 * a * len + s + e) / 2);
+      const vs = Math.sqrt(s), ve = Math.sqrt(e), vc = Math.sqrt(Math.max(c2, 1e-9));
+      const d1 = (c2 - s) / (2 * a), d3 = (c2 - e) / (2 * a), dc = Math.max(0, len - d1 - d3);
+      const t = Math.max(0, (vc - vs) / a) + Math.max(0, (vc - ve) / a) + dc / vc;
+      this.time += t; this.tKind[this.qKind[i]] += t; this.tTool[this.qTool[i]] += t; if (this.qKind[i] === 0) this.tType[this.qType[i]] += t;
+      this.tim[this.qInst[i]] = this.time;
+      cur = e;
+    }
+    this.qN = 0;
+  }
+  finish() {
+    this.flush();
+    const n = this.n;
+    const src = this.markers > 0 ? this.layers : this.zLayers;
+    const LN = src.length;
+    const lStart = new Int32Array(LN), lZ = new Float32Array(LN), lH = new Float32Array(LN), lTime = new Float32Array(LN), lMask = new Uint32Array(LN), lSwaps = new Uint16Array(LN), lColl = new Uint16Array(LN);
+    let prevZ = 0;
+    for (let i = 0; i < LN; i++) {
+      const L = src[i]; lStart[i] = Math.min(L.start, n);
+      let z = L.z; if (!(z >= 0)) z = i === 0 ? 0 : prevZ + (L.h || 0.2);
+      lZ[i] = z; lH[i] = L.h > 0 ? L.h : Math.max(0, z - prevZ); prevZ = z;
+    }
+    const tct = parseFloat(this.cfg.machine_tool_change_time); const swapT = tct >= 0 ? tct : 5;
+    const tc = this.toolChanges;
+    let add = 0, k = 0, lastRaw = 0;
+    for (let i = 0; i < n; i++) {
+      while (k < tc.length && tc[k].i <= i) { add += swapT; k++; }
+      let raw = this.tim[i]; if (raw === 0 && i > 0) raw = lastRaw; else lastRaw = raw;
+      this.tim[i] = raw + add;
+    }
+    const totalTime = this.time + tc.length * swapT;
+    const layerOf = (idx) => { let lo = 0, hi = LN - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (lStart[mid] <= idx) lo = mid; else hi = mid - 1; } return lo; };
+    for (let i = 0; i < LN; i++) {
+      const s = lStart[i], e = i + 1 < LN ? lStart[i + 1] : n;
+      lTime[i] = e > 0 ? (this.tim[Math.max(0, e - 1)] - (s > 0 ? this.tim[s - 1] : 0)) : 0;
+      let mask = 0; for (let j = s; j < e; j++) { if (this.meta[j * 4 + 2] === 0) mask |= 1 << (this.meta[j * 4] & 31); }
+      lMask[i] = mask >>> 0;
+    }
+    for (const c of tc) { c.layer = layerOf(c.i); lSwaps[c.layer]++; }
+    for (const c of this.collisions) { c.layer = layerOf(c.i); lColl[c.layer]++; }
+    const pct = (h, total, p) => { let acc = 0; const target = total * p; for (let i = 0; i < h.length; i++) { acc += h[i]; if (acc >= target) return i; } return h.length - 1; };
+    let fTot = 0; for (const v of this.flowHist) fTot += v; let sTot = 0; for (const v of this.speedHist) sTot += v;
+    const tools = [];
+    for (let t = 0; t < 32; t++) {
+      if (this.toolSegs[t] === 0 && this.tCount[t] === 0 && Math.abs(this.netE[t]) < 1e-6) continue;
+      const h = this.flowHistT.subarray(t * 400, t * 400 + 400); let tot = 0; for (const v of h) tot += v;
+      tools.push({ t, netE: this.netE[t], extLen: this.extLen[t], vol: this.vol[t], segs: this.toolSegs[t], peakFlow: this.peakFlow[t], p95Flow: tot ? pct(h, tot, 0.95) / 4 : 0, time: this.tTool[t], temps: this.toolTemps[t], swapsIn: tc.filter(c => c.to === t).length, tcount: this.tCount[t] });
+    }
+    const cmds = []; this.cmds.forEach((v, k2) => cmds.push({ name: k2, n: v.n, line: v.line }));
+    for (let i = 0; i < 1000; i++) { if (this.gCount[i]) cmds.push({ name: 'G' + i, n: this.gCount[i], line: 0 }); if (this.mCount[i]) cmds.push({ name: 'M' + i, n: this.mCount[i], line: 0 }); }
+    for (let i = 0; i < 64; i++) if (this.tCount[i]) cmds.push({ name: 'T' + i, n: this.tCount[i], line: 0 });
+    const pts = this.pts, meta = this.meta, sf = this.sf, tim = this.tim, lno = this.lno, off = this.off;
+    const msg = {
+      type: 'done', n, lines: this.lineNo,
+      pts: pts.buffer, meta: meta.buffer, sf: sf.buffer, tim: tim.buffer, lno: lno.buffer, off: off.buffer,
+      lStart, lZ, lH, lTime, lMask, lSwaps, lColl, markers: this.markers,
+      toolChanges: tc, collisions: this.collisions, collCount: this.collCount,
+      cfg: this.cfg, hdr: this.hdr, thumbs: this.thumbs, objects: this.objects, cmds, typeNames: this.typeNames,
+      tools, bedTemps: this.bedTemps,
+      bmin: this.bmin, bmax: this.bmax, bminI: this.bminI, bmaxI: this.bmaxI, pb: this.pb,
+      time: totalTime, moveTime: this.time, swapT, tKind: Array.from(this.tKind), tRetract: this.tRetract, tType: Array.from(this.tType),
+      m73R: this.m73R, maxAccelSeen: this.maxAccelSeen, maxFeedSeen: this.maxFeedSeen,
+      speedRange: sTot ? [pct(this.speedHist, sTot, 0.02) * 2, pct(this.speedHist, sTot, 0.98) * 2 + 2] : [0, 100],
+      flowRange: fTot ? [pct(this.flowHist, fTot, 0.02) / 4, pct(this.flowHist, fTot, 0.98) / 4 + 0.25] : [0, 10],
+      peakFlowAll: Math.max(0, ...tools.map(t => t.peakFlow)),
+      extrudeLen: this.extrudeLen, travelLen: this.travelLen, retracts: this.retracts
+    };
+    return { msg, transfer: [pts.buffer, meta.buffer, sf.buffer, tim.buffer, lno.buffer, off.buffer] };
+  }
+}
+
+self.onmessage = async (ev) => {
+  const d = ev.data;
+  try {
+    const size = d.file ? d.file.size : d.text.length;
+    const P = new Parser(size);
+    if (d.file) {
+      const f = d.file, CH = 8 * 1024 * 1024; let pos = 0;
+      while (pos < f.size) {
+        const end = Math.min(f.size, pos + CH);
+        const buf = new Uint8Array(await f.slice(pos, end).arrayBuffer());
+        P.feed(buf, pos, end >= f.size);
+        pos = end;
+        self.postMessage({ type: 'progress', done: pos, total: f.size, segs: P.n });
+      }
+    } else {
+      P.feed(new TextEncoder().encode(d.text), 0, true);
+    }
+    const out = P.finish();
+    self.postMessage(out.msg, out.transfer);
+  } catch (e) {
+    self.postMessage({ type: 'error', message: (e && e.message) || String(e) });
+  }
+};
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const U1 = {
+  bed: [0.5, 1, 270.5, 271], height: 270, docksX: [35.0, 102.7, 170.2, 237.7], dockY: 332.2,
+  maxFlow: 32, maxSpeed: 500, maxAccel: 20000, swapS: 5
+};
+const U1_CMDS = new Set(("ABORT ACCELEROMETER_DEBUG_READ ACCELEROMETER_DEBUG_WRITE ACCELEROMETER_MEASURE ACCELEROMETER_QUERY ACCEL_TIME_MEASURE ACCEPT ACTIVATE_EXTRUDER ADJUSTED ANGLE_CALIBRATE ANGLE_DEBUG_READ ANGLE_DEBUG_WRITE AUTO_BED_MESH_CALIBRATE AUTO_FEEDING AUTO_FEEDING_BATCH AUTO_FEEDING_PREHEAT AUTO_SCREWS_TILT_ADJUST AXIS_TWIST_COMPENSATION_CALIBRATE BED_MESH_CALIBRATE BED_MESH_CALIBRATE_PREPARE BED_MESH_CLEAR BED_MESH_MAP BED_MESH_OFFSET BED_MESH_OUTPUT BED_MESH_PROFILE BED_PRELEVELING_SCAN BED_SCREWS_ADJUST BED_TILT_CALIBRATE CANCEL_PRINT CHECK_FILAMENT_RUNOUT CLEAR_EXCEPTION CLEAR_PAUSE CONTROL_EXTRUDE_ACTION CONTROL_RETRACT_ACTION DEFECT_DETECTION_CONFIG DEFECT_DETECTION_DETECT DEFECT_DETECTION_DETECT_BED DEFECT_DETECTION_DETECT_NOZZLE DEFECT_DETECTION_START DEFECT_DETECT_NOODLE_FIRST DETECT_BED_PLATE DETECT_PLATE DUMP_TMC ECHO ENABLE_POWER_LOSS EXCLUDE_OBJECT EXCLUDE_OBJECT_DEFINE EXCLUDE_OBJECT_END EXCLUDE_OBJECT_START EXIT_TO_IDLE FEEDING_RUNOUT_EVENT_HANDLE FEED_AUTO FEED_MANUAL FINELY_CLEAN_NOZZLE_STAGE_1 FINELY_CLEAN_NOZZLE_STAGE_2 FIRMWARE_RESTART FLOW_APPLY_CALIBRATE_K FLOW_CALIBRATE FLOW_MEASURE_K FLOW_RESET_K FORCE_MOVE G0 G1 G10 G11 G17 G18 G19 G2 G20 G21 G28 G3 G4 G90 G91 G92 GET_POSITION GET_PRINT_EXTRUDER_MAP GET_RETRACTION HELP INNER_FILAMENT_UNLOAD INNER_FLUSH_FILAMENT INNER_PAUSE INNER_PREEXTRUDE_FILAMENT INNER_PRINT_END INNER_RESUME M104 M105 M106 M107 M109 M110 M112 M114 M115 M117 M118 M119 M140 M18 M190 M20 M204 M21 M220 M221 M23 M24 M25 M26 M27 M400 M405 M406 M407 M600 M73 M82 M83 M84 MANUAL_FEEDING MANUAL_PROBE MANUAL_STEPPER MOVE_TO_DISCARD_FILAMENT_POSITION MOVE_TO_PARK_CALIBRATION_POINT MOVE_TO_XY_IDLE_POSITION MOVE_TO_XY_IDLE_POSITION_EXTRUDER MOVE_TO_XY_IDLE_POSITION_EXTRUDER1 MOVE_TO_XY_IDLE_POSITION_EXTRUDER2 MOVE_TO_XY_IDLE_POSITION_EXTRUDER3 PARK_EXTRUDER PAUSE PICK_EXTRUDER PID_CALIBRATE PRINT_END PRINT_PRESTART_CHECK PRINT_START PROBE QUERY_ENDSTOPS QUERY_PARK_STA QUERY_PROBE RESPOND RESTART RESTORE_FAN RESTORE_GCODE_STATE RESUME ROUGHLY_CLEAN_NOZZLE ROUGHLY_CLEAN_NOZZLE_WITH_DISCARD SAVE_CONFIG SAVE_GCODE_STATE SAVE_VARIABLE SDCARD_PRINT_FILE SET_DISPLAY_TEXT SET_EXTRUDER_ROTATION_DISTANCE SET_FAN_SPEED SET_FILAMENT_SENSOR SET_GCODE_OFFSET SET_GCODE_VARIABLE SET_HEATER_TEMPERATURE SET_IDLE_TIMEOUT SET_INPUT_SHAPER SET_KINEMATIC_POSITION SET_LED SET_MAX_E_ACCEL SET_MAX_E_VELOCITY SET_MAX_Z_ACCEL SET_MAX_Z_VELOCITY SET_NOZZLE_DIAMETER SET_PAUSE_AT_LAYER SET_PAUSE_NEXT_LAYER SET_PIN SET_PRESSURE_ADVANCE SET_PRINT_AUTO_BED_LEVELING SET_PRINT_EXTRUDER_MAP SET_PRINT_FILAMENT_CONFIG SET_PRINT_PREFERENCES SET_PRINT_STATS_INFO SET_PRINT_TASK_PARAMETERS SET_PRINT_USED_EXTRUDERS SET_PURIFIER SET_PURIFIER_MODE SET_RETRACTION SET_SKEW SET_STEPPER_ENABLE SET_TEMPERATURE_FAN_TARGET SET_TIME_LAPSE_CAMERA SET_VELOCITY_LIMIT SHAKE_Z SHAPER_CALIBRATE SKEW_PROFILE SM_FAST_SHAPER_CALIBRATE SM_PRINT_AUTO_FEED SM_PRINT_CHECK_SWITCH_EXTRUDER SM_PRINT_END_AUTO_UNLOAD_FILAMENT SM_PRINT_EXTRUDER_PREHEAT SM_PRINT_FLOW_CALIBRATE SM_PRINT_PREEXTRUDE_FILAMENT SM_PRINT_START_LINE SM_PRINT_START_LINE_EXTRUDER_0 SM_PRINT_START_LINE_EXTRUDER_1 SM_PRINT_START_LINE_EXTRUDER_2 SM_PRINT_START_LINE_EXTRUDER_3 STATUS SWITCH_EXTRUDER SWITCH_EXTRUDER_ADVANCED SWITCH_OF_EXTENDED_EXTRUDER SYNC_EXTRUDER_MOTION TEMPERATURE_WAIT TIMELAPSE_IGNORE TIMELAPSE_START TIMELAPSE_STOP TIMELAPSE_TAKE_FRAME TURN_OFF_HEATERS UPDATE_DELAYED_GCODE VERIFY_PARK_POSITION WAIT_CHAMBER_TEMP XYZ_OFFSET_CALIBRATE XYZ_OFFSET_CALIBRATE_ALL Z_OFFSET_APPLY_PROBE Z_TILT_ADJUST").split(' '));
+const SRC = {
+  faq: { label: 'Snapmaker U1 FAQ', url: 'https://forum.snapmaker.com/t/u1-faq-official-info-summary/39648' },
+  specs: { label: 'U1 specs', url: 'https://www.snapmaker.com/en-US/snapmaker-u1/specs' },
+  fw: { label: 'U1 firmware source', url: 'https://github.com/Snapmaker/u1-klipper' },
+  orca: { label: 'Snapmaker Orca source', url: 'https://github.com/Snapmaker/OrcaSlicer' },
+  h2d: { label: 'Reddit: tool changes knocking prints over', url: 'https://www.reddit.com/r/snapmaker/comments/1vjs7kl/warning_snapmaker_u1_will_ruin_all_your_prints/' },
+  sparse: { label: 'Reddit: "No sparse layers" collisions', url: 'https://www.reddit.com/r/snapmaker/comments/1ut6fu0/snapmaker_u1_toolhead_collision_with_print/' },
+  collide: { label: 'Reddit: toolhead hits model after swaps', url: 'https://www.reddit.com/r/snapmaker/comments/1rc6rnu/snapmaker_u1_multitool_multicolor_printing/' },
+  tower: { label: 'Reddit: prime tower falling over', url: 'https://www.reddit.com/r/snapmaker/comments/1phuelq/u1_purge_tower_keeps_falling_over/' },
+  noTower: { label: 'Reddit: contamination without a tower', url: 'https://www.reddit.com/r/snapmaker/comments/1t9auy0/u1_color_contamination_on_the_back_of_a_print/' },
+  purge: { label: 'Reddit: purge vs prime tower', url: 'https://www.reddit.com/r/snapmaker/comments/1s81rmu/purge_instead_of_prime_tower_snapmaker_u1/' },
+  big: { label: 'Reddit: 400 MB G-code error', url: 'https://www.reddit.com/r/snapmaker/comments/1qvqwfr/u1_large_gcode_400_mb_error/' },
+  unk: { label: 'Reddit: unrecognized G-code', url: 'https://www.reddit.com/r/snapmaker/comments/1rcax9q/u1_bad_pratices_unrecognized_gcode_when_not_up_to/' },
+  tpu: { label: '3D Print Wiki: U1 TPU jams', url: 'https://3dprint.wiki/printers/snapmaker/u1' },
+  slow: { label: 'Reddit: max volumetric speed', url: 'https://www.reddit.com/r/snapmaker/comments/1unkvzv/new_snapmaker_u1_owner_coming_from_a_bambulab_a1/' },
+  fast: { label: 'Reddit: PETG profile bed temperature', url: 'https://www.reddit.com/r/snapmaker/comments/1pln1kx/crazy_fast_tool_changes_on_the_snapmaker_u1/' },
+  excl: { label: 'Reddit: Klipper tips (exclude objects)', url: 'https://www.reddit.com/r/snapmaker/comments/1q6og24/u1_klipper_tips_adaptive_bed_mesh_exclude_objects/' },
+  dots: { label: 'Reddit: contamination dots on small parts', url: 'https://www.reddit.com/r/snapmaker/comments/1v8b6mi/snapmaker_u1_random_color_contamination_dots_on/' }
+};
+const FEATURE_COLORS = ['#8e8a82','#f0973a','#e9d36d','#4f7ae0','#b23b3b','#a066d6','#e0503e','#5e9f6a','#e58fd0','#6b8fb3','#8fb3c9','#f4f0e6','#3fb6a8','#2f9b8f','#5fbf5a','#3d76c4','#89c27b','#9aa3ad','#7a7670','#c79a5d','#d3b48a','#9ec4e8','#c5e3a6','#e8c6a0'];
+const FALLBACK_TOOL = ['#f2efe8','#4f86c6','#d9603b','#4fae6a','#e3b341','#9a64c9','#45b3c4','#c95a8a'];
+
+// ---------- state ----------
+let D = null;          // parsed data
+let srcBlob = null;    // File or Blob for the code view
+let isSample = true;
+let state = { mode: 0, travel: false, swaps: true, coll: true, dim: false, lmin: 0, lmax: 0, mv: 0, playing: false };
+try { const s = JSON.parse(localStorage.getItem('u1v-prefs') || '{}'); ['mode','travel','swaps','coll','dim'].forEach(k => { if (k in s) state[k] = s[k]; }); } catch (e) {}
+const savePrefs = () => { try { localStorage.setItem('u1v-prefs', JSON.stringify({ mode: state.mode, travel: state.travel, swaps: state.swaps, coll: state.coll, dim: state.dim })); } catch (e) {} };
+
+// ---------- formatting ----------
+const fmtDur = (s) => { if (!(s >= 0) || !isFinite(s)) return '–'; s = Math.round(s); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60; if (d) return `${d} d ${h} h`; if (h) return `${h} h ${String(m).padStart(2, '0')} m`; if (m) return `${m} m ${String(sec).padStart(2, '0')} s`; return `${sec} s`; };
+const fmtNum = (v, d = 1) => (v === undefined || v === null || !isFinite(v)) ? '–' : Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtInt = (v) => Number(v || 0).toLocaleString();
+const fmtBytes = (b) => b > 1e9 ? fmtNum(b / 1e9, 2) + ' GB' : b > 1e6 ? fmtNum(b / 1e6, 1) + ' MB' : fmtNum(b / 1e3, 0) + ' kB';
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const parseDur = (str) => { if (!str) return NaN; let t = 0, any = false; const re = /(\d+(?:\.\d+)?)\s*([dhms])/g; let m; while ((m = re.exec(str))) { any = true; t += +m[1] * ({ d: 86400, h: 3600, m: 60, s: 1 })[m[2]]; } return any ? t : NaN; };
+const listCfg = (v) => (v === undefined ? [] : String(v).split(/[;,]/).map(s => s.trim().replace(/^"|"$/g, '')));
+
+// ---------- three.js ----------
+const stageEl = $('stage'), canvas = $('gl');
+let renderer, scene, camera, controls, pathMesh, pathMat, swapPts, collPts, nozzle, dockGroup, ptMat;
+let needsRender = true;
+const glOk = (() => { try { const c = document.createElement('canvas'); return !!c.getContext('webgl2'); } catch (e) { return false; } })();
+
+function initGL() {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setClearColor(0x1b1d20, 1);
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(35, 1, 0.5, 5000);
+  camera.up.set(0, 0, 1);
+  controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true; controls.dampingFactor = 0.12; controls.screenSpacePanning = true;
+  controls.addEventListener('change', () => { needsRender = true; });
+  // build plate
+  const [x0, y0, x1, y1] = U1.bed;
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, 2), new THREE.MeshBasicMaterial({ color: 0x3a3227 }));
+  plate.position.set((x0 + x1) / 2, (y0 + y1) / 2, -1.02); scene.add(plate);
+  const gp = [];
+  for (let x = 10; x < 271; x += 10) gp.push(x, y0, 0, x, y1, 0);
+  for (let y = 10; y < 271; y += 10) gp.push(x0, y, 0, x1, y, 0);
+  const grid = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(gp, 3)), new THREE.LineBasicMaterial({ color: 0x5c5040 }));
+  grid.position.z = 0.02; scene.add(grid);
+  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(x1 - x0, y1 - y0, U1.height)), new THREE.LineBasicMaterial({ color: 0x3a3d42 }));
+  edge.position.set((x0 + x1) / 2, (y0 + y1) / 2, U1.height / 2); scene.add(edge);
+  // front marker: a short bar along the front edge
+  const fm = new THREE.Mesh(new THREE.BoxGeometry(60, 3, 0.6), new THREE.MeshBasicMaterial({ color: 0xa47b3a }));
+  fm.position.set(135.5, y0 - 4, -0.3); scene.add(fm);
+  // docks (they sit in the nozzle plane, so they move with the current layer)
+  dockGroup = new THREE.Group();
+  for (let i = 0; i < 4; i++) {
+    const g = new THREE.Group();
+    const box = new THREE.Mesh(new THREE.BoxGeometry(44, 30, 36), new THREE.MeshBasicMaterial({ color: 0x9aa0a8, transparent: true, opacity: 0.14, depthWrite: false }));
+    box.position.set(0, 0, 18);
+    const ed = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(44, 30, 36)), new THREE.LineBasicMaterial({ color: 0x9aa0a8, transparent: true, opacity: 0.55 }));
+    ed.position.copy(box.position);
+    g.add(box); g.add(ed); g.position.set(U1.docksX[i], U1.dockY, 0); g.userData.box = box; g.userData.edge = ed;
+    dockGroup.add(g);
+  }
+  scene.add(dockGroup);
+  nozzle = new THREE.Mesh(new THREE.ConeGeometry(2.2, 6, 20), new THREE.MeshBasicMaterial({ color: 0xffe9b0 }));
+  nozzle.rotation.x = -Math.PI / 2; nozzle.visible = false; scene.add(nozzle);
+  ptMat = (size) => new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3, transparent: true, depthTest: true,
+    uniforms: { uMin: { value: 0 }, uMax: { value: 0 }, uSize: { value: size }, uScale: { value: 400 } },
+    vertexShader: `in float aIdx; in vec3 aCol; uniform float uMin; uniform float uMax; uniform float uSize; uniform float uScale; out vec3 vC;
+      void main(){ vC = aCol; vec4 mv = modelViewMatrix * vec4(position,1.0); gl_Position = projectionMatrix * mv;
+        if (aIdx < uMin || aIdx > uMax) { gl_Position = vec4(2.,2.,2.,1.); }
+        gl_PointSize = clamp(uSize * uScale / -mv.z, 4.0, 22.0); }`,
+    fragmentShader: `in vec3 vC; out vec4 fc; void main(){ vec2 p = gl_PointCoord*2.0-1.0; float r = dot(p,p); if (r > 1.0) discard; float ring = smoothstep(0.55,0.7,r); fc = vec4(mix(vC, vec3(0.08), ring*0.85), 1.0); }`
+  });
+  window.addEventListener('resize', resize);
+  new ResizeObserver(resize).observe(stageEl);
+  resize();
+  animate();
+}
+function resize() {
+  if (!renderer) return;
+  const w = stageEl.clientWidth, h = stageEl.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
+  if (swapPts) swapPts.material.uniforms.uScale.value = h / 2;
+  if (collPts) collPts.material.uniforms.uScale.value = h / 2;
+  needsRender = true; drawHist();
+}
+const VS = `
+precision highp float; precision highp int;
+in vec3 aP0; in vec3 aP1; in vec4 aMeta; in vec2 aSF;
+uniform int uFirst; uniform int uLast; uniform int uCur; uniform int uCurLayerStart;
+uniform int uMode; uniform float uTravel; uniform float uDim;
+uniform vec3 uTool[32]; uniform float uToolOn[32]; uniform vec3 uType[24]; uniform float uTypeOn[24];
+uniform vec2 uSpeed; uniform vec2 uFlow;
+out vec3 vCol; out float vS; out float vKind;
+vec3 ramp(float t){ t = clamp(t,0.,1.);
+  vec3 c0=vec3(.13,.20,.44), c1=vec3(.10,.55,.62), c2=vec3(.55,.78,.30), c3=vec3(.98,.80,.20), c4=vec3(.90,.30,.18);
+  if(t<.25) return mix(c0,c1,t/.25); if(t<.5) return mix(c1,c2,(t-.25)/.25); if(t<.75) return mix(c2,c3,(t-.5)/.25); return mix(c3,c4,(t-.75)/.25); }
+void main(){
+  int id = gl_InstanceID;
+  float kind = aMeta.z; int tool = int(aMeta.x + .5); int ty = int(aMeta.y + .5);
+  bool hide = id < uFirst || id > uLast || id > uCur || kind > 2.5;
+  if (kind > .5 && uTravel < .5) hide = true;
+  if (kind < .5 && (uTypeOn[ty] < .5 || uToolOn[tool] < .5)) hide = true;
+  vec3 dir = aP1 - aP0; float len = length(dir);
+  vS = position.y; vKind = kind;
+  if (hide || len < 1e-5) { gl_Position = vec4(2.,2.,2.,1.); vCol = vec3(0.); return; }
+  vec3 d = dir / len;
+  float w = kind < .5 ? max(aMeta.w * .01, .1) : .12;
+  vec3 base = mix(aP0, aP1, position.x);
+  vec3 toCam = normalize(cameraPosition - base);
+  vec3 side = cross(d, toCam); float sl = length(side);
+  side = sl < 1e-4 ? normalize(cross(d, vec3(.31,.47,.83))) : side / sl;
+  float ext = kind < .5 ? .5 * w : 0.;
+  vec3 p = base + side * (position.y * .5 * w) + d * ((position.x * 2. - 1.) * ext);
+  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.);
+  vec3 c;
+  if (kind > .5) { c = kind > 1.5 ? vec3(.86,.42,.30) : mix(vec3(.50,.52,.56), uTool[tool], .45); }
+  else if (uMode == 0) c = uTool[tool];
+  else if (uMode == 1) c = uType[ty];
+  else if (uMode == 2) c = ramp((aSF.x - uSpeed.x) / max(uSpeed.y - uSpeed.x, 1.));
+  else c = ramp((aSF.y * .01 - uFlow.x) / max(uFlow.y - uFlow.x, .01));
+  if (uDim > .5 && id < uCurLayerStart && kind < .5) c = mix(c, vec3(.32,.33,.35), .62);
+  if (id == uCur) c = vec3(1., .93, .55);
+  vCol = c;
+}`;
+const FS = `
+precision highp float;
+in vec3 vCol; in float vS; in float vKind; out vec4 fc;
+void main(){
+  if (vKind > .5) { fc = vec4(vCol, 1.); return; }
+  float n = sqrt(max(0., 1. - vS * vS));
+  float lit = .36 + .64 * n;
+  fc = vec4(vCol * lit + pow(n, 22.) * .16, 1.);
+}`;
+function hexToRgb(h) { const m = /^#?([0-9a-f]{6})/i.exec(h || ''); if (!m) return null; const v = parseInt(m[1], 16); return [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255]; }
+function toolColors() {
+  const cols = listCfg(D && (D.cfg.filament_colour || D.cfg.extruder_colour));
+  const arr = new Float32Array(96), hex = [];
+  for (let i = 0; i < 32; i++) {
+    let h = cols[i] && /^#?[0-9a-f]{6}/i.test(cols[i]) ? (cols[i][0] === '#' ? cols[i] : '#' + cols[i]) : FALLBACK_TOOL[i % FALLBACK_TOOL.length];
+    hex.push(h.slice(0, 7)); const c = hexToRgb(h);
+    // keep very dark filament visible on the dark stage
+    const l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const k = l < 0.12 ? 0.12 / Math.max(l, 0.02) : 1;
+    arr[i * 3] = Math.min(1, c[0] * k + (l < 0.05 ? 0.1 : 0)); arr[i * 3 + 1] = Math.min(1, c[1] * k + (l < 0.05 ? 0.1 : 0)); arr[i * 3 + 2] = Math.min(1, c[2] * k + (l < 0.05 ? 0.1 : 0));
+  }
+  return { arr, hex };
+}
+const typeOn = new Float32Array(24).fill(1), toolOn = new Float32Array(32).fill(1);
+function buildScene() {
+  if (pathMesh) { scene.remove(pathMesh); pathMesh.geometry.dispose(); }
+  if (swapPts) { scene.remove(swapPts); swapPts.geometry.dispose(); }
+  if (collPts) { scene.remove(collPts); collPts.geometry.dispose(); }
+  const n = D.n;
+  const pts = new Float32Array(D.pts, 0, (n + 1) * 3);
+  const geo = new THREE.InstancedBufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0], 3));
+  geo.setIndex([0, 2, 1, 2, 3, 1]);
+  const ib = new THREE.InstancedInterleavedBuffer(pts, 3, 1);
+  geo.setAttribute('aP0', new THREE.InterleavedBufferAttribute(ib, 3, 0));
+  geo.setAttribute('aP1', new THREE.InterleavedBufferAttribute(ib, 3, 3));
+  geo.setAttribute('aMeta', new THREE.InstancedBufferAttribute(new Uint8Array(D.meta, 0, n * 4), 4, false));
+  geo.setAttribute('aSF', new THREE.InstancedBufferAttribute(new Uint16Array(D.sf, 0, n * 2), 2, false));
+  geo.instanceCount = Math.max(0, n - 0);
+  const tc = toolColors(); D.toolHex = tc.hex;
+  const typeArr = new Float32Array(72); FEATURE_COLORS.forEach((h, i) => { const c = hexToRgb(h); typeArr.set(c, i * 3); });
+  typeOn.fill(1); toolOn.fill(1);
+  pathMat = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3, vertexShader: VS, fragmentShader: FS, side: THREE.DoubleSide,
+    uniforms: {
+      uFirst: { value: 0 }, uLast: { value: n }, uCur: { value: n }, uCurLayerStart: { value: 0 }, uMode: { value: state.mode },
+      uTravel: { value: state.travel ? 1 : 0 }, uDim: { value: state.dim ? 1 : 0 },
+      uTool: { value: tc.arr }, uToolOn: { value: toolOn }, uType: { value: typeArr }, uTypeOn: { value: typeOn },
+      uSpeed: { value: new THREE.Vector2(D.speedRange[0], Math.max(D.speedRange[1], D.speedRange[0] + 5)) },
+      uFlow: { value: new THREE.Vector2(D.flowRange[0], Math.max(D.flowRange[1], D.flowRange[0] + 0.5)) }
+    }
+  });
+  pathMesh = new THREE.Mesh(geo, pathMat); pathMesh.frustumCulled = false; scene.add(pathMesh);
+  // swap markers
+  const sp = [], sc = [], si = [];
+  for (const c of D.toolChanges) { if (!isFinite(c.ex)) continue; sp.push(c.ex, c.ey, c.ez + 0.3); const col = hexToRgb(tc.hex[c.to & 31]); sc.push(col[0], col[1], col[2]); si.push(c.i); }
+  const sg = new THREE.BufferGeometry();
+  sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3)); sg.setAttribute('aCol', new THREE.Float32BufferAttribute(sc, 3)); sg.setAttribute('aIdx', new THREE.Float32BufferAttribute(si, 1));
+  swapPts = new THREE.Points(sg, ptMat(0.9)); swapPts.frustumCulled = false; scene.add(swapPts);
+  const cp = [], cc = [], ci = [];
+  for (const c of D.collisions) { cp.push(c.x, c.y, c.z + 0.4); cc.push(0.95, 0.27, 0.22); ci.push(c.i); }
+  const cg = new THREE.BufferGeometry();
+  cg.setAttribute('position', new THREE.Float32BufferAttribute(cp, 3)); cg.setAttribute('aCol', new THREE.Float32BufferAttribute(cc, 3)); cg.setAttribute('aIdx', new THREE.Float32BufferAttribute(ci, 1));
+  collPts = new THREE.Points(cg, ptMat(1.6)); collPts.frustumCulled = false; scene.add(collPts);
+  const usedT = new Set(D.tools.filter(t => t.segs > 0).map(t => t.t % 4));
+  dockGroup.children.forEach((g, i) => { const c = new THREE.Color(usedT.has(i) ? tc.hex[i] : '#5b5f66'); g.userData.box.material.color = c; g.userData.edge.material.color = c; });
+  resize();
+}
+function fitView(kind = 'iso') {
+  if (!D) return;
+  const usePb = D.pb[3] > D.pb[0];
+  const mn = usePb ? D.pb.slice(0, 3) : D.bmin, mx = usePb ? D.pb.slice(3) : D.bmax;
+  const ok = mx[0] > mn[0];
+  const cx = ok ? (mn[0] + mx[0]) / 2 : 135.5, cy = ok ? (mn[1] + mx[1]) / 2 : 136, cz = ok ? (mn[2] + mx[2]) / 2 : 20;
+  const r = ok ? Math.max(20, Math.hypot(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]) / 2) : 150;
+  const dist = r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.05;
+  controls.target.set(cx, cy, cz);
+  if (kind === 'top') camera.position.set(cx, cy - 0.001, cz + dist);
+  else if (kind === 'front') camera.position.set(cx, cy - dist, cz);
+  else camera.position.set(cx + dist * 0.45, cy - dist * 0.78, cz + dist * 0.55);
+  camera.near = Math.max(0.1, dist / 200); camera.far = dist * 20; camera.updateProjectionMatrix();
+  controls.update(); needsRender = true;
+}
+let lastFrame = 0;
+function animate(t) {
+  requestAnimationFrame(animate);
+  if (state.playing && D && t - lastFrame > 16) { lastFrame = t; stepPlay(); }
+  if (controls) controls.update();
+  if (needsRender && renderer) { renderer.render(scene, camera); needsRender = false; }
+}
+
+// ---------- layer / move control ----------
+const lmin = $('lmin'), lmax = $('lmax'), mv = $('mv');
+function layerEnd(li) { return li + 1 < D.lStart.length ? D.lStart[li + 1] : D.n; }
+function applyRange(fromUser) {
+  if (!D || !pathMat) return;
+  const a = state.lmin, b = state.lmax;
+  const first = D.lStart[a], end = layerEnd(b), topStart = D.lStart[b];
+  const cnt = Math.max(0, end - topStart);
+  mv.max = String(cnt); if (state.mv > cnt) state.mv = cnt; mv.value = String(state.mv);
+  const fullLayer = state.mv >= cnt;
+  const cur = fullLayer ? end - 1 : topStart + state.mv - 1;
+  const u = pathMat.uniforms;
+  u.uFirst.value = first; u.uLast.value = end - 1; u.uCur.value = cur; u.uCurLayerStart.value = topStart;
+  if (swapPts) { swapPts.material.uniforms.uMin.value = first; swapPts.material.uniforms.uMax.value = fullLayer ? end : cur + 1; swapPts.visible = state.swaps; }
+  if (collPts) { collPts.material.uniforms.uMin.value = first; collPts.material.uniforms.uMax.value = fullLayer ? end : cur + 1; collPts.visible = state.coll; }
+  const z = D.lZ[b];
+  dockGroup.position.z = z;
+  // nozzle marker
+  const ci = fullLayer ? end - 1 : cur;
+  if (ci >= 0 && ci < D.n && !fullLayer) {
+    const P = D.ptsView, p = (ci + 1) * 3; nozzle.position.set(P[p], P[p + 1], P[p + 2] + 3.2); nozzle.visible = true;
+    const tool = D.metaView[ci * 4]; nozzle.material.color.set(D.toolHex[tool & 31]);
+  } else nozzle.visible = false;
+  // readouts
+  const fill = $('dualFill'), L = Math.max(1, D.lStart.length - 1);
+  fill.style.left = `calc(7px + (100% - 14px) * ${a / L})`; fill.style.width = `calc((100% - 14px) * ${(b - a) / L})`;
+  const layerName = (i) => i === 0 ? 'start' : String(i);
+  $('layerRead').innerHTML = `<b>${layerName(a)}–${layerName(b)}</b> of ${D.lStart.length - 1} · z <b>${fmtNum(z, 2)}</b> mm`;
+  updateHud(ci, b);
+  needsRender = true;
+  drawHist();
+  scheduleCode(ci);
+}
+function updateHud(ci, layer) {
+  const el = $('hud');
+  if (!D || ci < 0 || ci >= D.n) { el.innerHTML = ''; return; }
+  const m = D.metaView, k = m[ci * 4 + 2], tool = m[ci * 4], ty = m[ci * 4 + 1];
+  const kindName = ['Extrusion', 'Travel', 'Wipe / retract', 'Jump'][k] || '';
+  const sp = D.sfView[ci * 2], fl = D.sfView[ci * 2 + 1] / 100;
+  const parts = [`<span><span class="k">layer</span> <b>${layer}</b></span>`, `<span><span class="k">tool</span> <b>T${tool}</b></span>`,
+    `<span>${esc(k === 0 ? (D.typeNames[ty] || 'Other') : kindName)}</span>`,
+    `<span><span class="k">v</span> <b>${fmtInt(sp)}</b> mm/s</span>`];
+  if (k === 0) parts.push(`<span><span class="k">flow</span> <b>${fmtNum(fl, 1)}</b> mm³/s</span>`, `<span><span class="k">w</span> ${fmtNum(m[ci * 4 + 3] / 100, 2)}</span>`);
+  parts.push(`<span><span class="k">line</span> ${fmtInt(D.lnoView[ci])}</span>`, `<span><span class="k">t</span> ${fmtDur(D.timView[ci])}</span>`);
+  el.innerHTML = parts.join('');
+}
+function setLayers(a, b, keepMv) {
+  if (!D) return;
+  const L = D.lStart.length - 1;
+  a = Math.max(0, Math.min(L, a)); b = Math.max(a, Math.min(L, b));
+  state.lmin = a; state.lmax = b; lmin.value = String(a); lmax.value = String(b);
+  if (!keepMv) state.mv = layerEnd(b) - D.lStart[b];
+  applyRange();
+}
+lmin.addEventListener('input', () => { let a = +lmin.value; if (a > state.lmax) a = state.lmax; setLayers(a, state.lmax); });
+lmax.addEventListener('input', () => { let b = +lmax.value; if (b < state.lmin) b = state.lmin; setLayers(state.lmin, b); });
+mv.addEventListener('input', () => { state.mv = +mv.value; applyRange(); });
+function jumpTo(idx, focus) {
+  if (!D) return;
+  const LN = D.lStart.length; let lo = 0, hi = LN - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (D.lStart[mid] <= idx) lo = mid; else hi = mid - 1; }
+  state.lmin = Math.min(state.lmin, lo); state.lmax = lo; lmin.value = String(state.lmin); lmax.value = String(lo);
+  state.mv = idx - D.lStart[lo] + 1;
+  applyRange();
+  if (focus) {
+    const P = D.ptsView, p = (idx + 1) * 3;
+    const off = camera.position.clone().sub(controls.target);
+    const dist = Math.min(off.length(), 160);
+    off.setLength(dist);
+    controls.target.set(P[p], P[p + 1], P[p + 2]); camera.position.copy(controls.target).add(off);
+    controls.update(); needsRender = true;
+  }
+}
+function swapNav(dir) {
+  if (!D || !D.toolChanges.length) return;
+  const curIdx = D.lStart[state.lmax] + state.mv - 1;
+  const tc = D.toolChanges;
+  let k;
+  if (dir > 0) { k = tc.findIndex(c => c.i > curIdx + 1); if (k < 0) k = 0; }
+  else { k = -1; for (let j = tc.length - 1; j >= 0; j--) if (tc[j].i < curIdx) { k = j; break; } if (k < 0) k = tc.length - 1; }
+  let idx = tc[k].i; const lim = Math.min(D.n - 1, idx + 20000);
+  while (idx < lim && D.metaView[idx * 4 + 2] !== 0) idx++;
+  jumpTo(idx, true);
+}
+$('prevSwap').addEventListener('click', () => swapNav(-1)); $('nextSwap').addEventListener('click', () => swapNav(1));
+$('codePrevSwap').addEventListener('click', () => swapNav(-1)); $('codeNextSwap').addEventListener('click', () => swapNav(1));
+const playBtn = $('playBtn');
+function setPlaying(p) { state.playing = p; playBtn.setAttribute('aria-pressed', String(p)); playBtn.textContent = p ? 'Pause' : 'Play'; }
+playBtn.addEventListener('click', () => {
+  if (!D) return;
+  if (!state.playing) { const cnt = layerEnd(state.lmax) - D.lStart[state.lmax]; if (state.mv >= cnt && state.lmax >= D.lStart.length - 1) { setLayers(state.lmin, 1); state.mv = 0; } else if (state.mv >= cnt) { state.mv = 0; } }
+  setPlaying(!state.playing);
+});
+function stepPlay() {
+  const cnt = layerEnd(state.lmax) - D.lStart[state.lmax];
+  const step = Math.max(1, Math.round(cnt / 75));
+  if (state.mv < cnt) { state.mv = Math.min(cnt, state.mv + step); applyRange(); }
+  else if (state.lmax < D.lStart.length - 1) { state.lmax++; lmax.value = String(state.lmax); state.mv = 0; applyRange(); }
+  else setPlaying(false);
+}
+window.addEventListener('keydown', (e) => {
+  if (!D || (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName))) return;
+  if (e.key === 'ArrowUp') { setLayers(state.lmin, state.lmax + 1); e.preventDefault(); }
+  else if (e.key === 'ArrowDown') { setLayers(state.lmin, state.lmax - 1); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') { state.mv = Math.min(+mv.max, state.mv + 1); applyRange(); e.preventDefault(); }
+  else if (e.key === 'ArrowLeft') { state.mv = Math.max(0, state.mv - 1); applyRange(); e.preventDefault(); }
+  else if (e.key === ' ' && e.target === document.body) { playBtn.click(); e.preventDefault(); }
+});
+
+// ---------- histogram over the layer slider ----------
+const hist = $('hist');
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function drawHist() {
+  if (!D) return;
+  const w = hist.clientWidth, h = hist.clientHeight; if (!w) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  hist.width = Math.round(w * dpr); hist.height = Math.round(h * dpr);
+  const g = hist.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const LN = D.lStart.length, x0 = 7, x1 = w - 7, span = x1 - x0;
+  const cols = Math.max(1, Math.floor(span));
+  const sw = new Float32Array(cols), mask = new Uint32Array(cols), coll = new Uint8Array(cols);
+  let mx = 0;
+  for (let i = 1; i < LN; i++) { const c = Math.min(cols - 1, Math.floor((i / Math.max(1, LN - 1)) * (cols - 1))); sw[c] += D.lSwaps[i]; mask[c] |= D.lMask[i]; if (D.lColl[i]) coll[c] = 1; }
+  for (let c = 0; c < cols; c++) if (sw[c] > mx) mx = sw[c];
+  const a = state.lmin / Math.max(1, LN - 1), b = state.lmax / Math.max(1, LN - 1);
+  g.fillStyle = cssVar('--chip'); g.fillRect(x0 + a * span, 0, Math.max(1, (b - a) * span), h);
+  const ink = cssVar('--muted');
+  g.fillStyle = ink; g.globalAlpha = 0.85;
+  if (mx > 0) for (let c = 0; c < cols; c++) { if (!sw[c]) continue; const bh = Math.max(1, (sw[c] / mx) * (h - 9)); g.fillRect(x0 + c, h - 7 - bh, 1, bh); }
+  g.globalAlpha = 1;
+  // tool strip: up to 4 rows of 1.5px
+  const used = D.tools.filter(t => t.segs > 0).map(t => t.t).slice(0, 4);
+  used.forEach((t, r) => { g.fillStyle = D.toolHex[t]; for (let c = 0; c < cols; c++) if (mask[c] & (1 << t)) g.fillRect(x0 + c, h - 6 + r * 1.5, 1, 1.5); });
+  g.fillStyle = cssVar('--bad'); for (let c = 0; c < cols; c++) if (coll[c]) g.fillRect(x0 + c - 1, 0, 2, 5);
+}
+
+// ---------- legend ----------
+function drawLegend() {
+  const el = $('legend'); if (!D) { el.innerHTML = ''; return; }
+  let html = '';
+  if (state.mode === 0) {
+    html += '<h4>Tools</h4>';
+    D.tools.filter(t => t.segs > 0).forEach(t => { html += `<button class="li${toolOn[t.t] ? '' : ' off'}" data-tool="${t.t}"><span class="sw" style="background:${D.toolHex[t.t]}"></span>T${t.t} · ${esc(toolLabel(t.t))}</button>`; });
+  } else if (state.mode === 1) {
+    html += '<h4>Features</h4>';
+    D.tType.forEach((tt, i) => { if (tt <= 0) return; html += `<button class="li${typeOn[i] ? '' : ' off'}" data-type="${i}"><span class="sw" style="background:${FEATURE_COLORS[i]}"></span>${esc(D.typeNames[i])}</button>`; });
+  } else {
+    const r = state.mode === 2 ? D.speedRange : D.flowRange;
+    html += `<h4>${state.mode === 2 ? 'Speed, mm/s' : 'Flow, mm³/s'}</h4><div class="ramp"></div><div class="rampnums"><span>${fmtNum(r[0], state.mode === 2 ? 0 : 1)}</span><span>${fmtNum(r[1], state.mode === 2 ? 0 : 1)}</span></div>`;
+    if (state.mode === 3) html += `<div class="rampnums" style="margin-top:6px"><span>U1 hotend max</span><span>32</span></div>`;
+  }
+  if (state.travel) html += `<h4 style="margin-top:8px">Moves</h4><div class="li" style="cursor:default"><span class="sw" style="background:#80848c"></span>Travel</div><div class="li" style="cursor:default"><span class="sw" style="background:#db6b4d"></span>Wipe / retract</div>`;
+  el.innerHTML = html;
+  el.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => { const t = +b.dataset.tool; toolOn[t] = toolOn[t] ? 0 : 1; needsRender = true; drawLegend(); }));
+  el.querySelectorAll('[data-type]').forEach(b => b.addEventListener('click', () => { const t = +b.dataset.type; typeOn[t] = typeOn[t] ? 0 : 1; needsRender = true; drawLegend(); }));
+}
+function toolLabel(t) {
+  const ids = listCfg(D.cfg.filament_settings_id), types = listCfg(D.cfg.filament_type);
+  return ids[t] || types[t] || 'Filament';
+}
+
+// ---------- toolbar ----------
+document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
+  state.mode = +b.dataset.mode; savePrefs();
+  document.querySelectorAll('[data-mode]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  if (pathMat) { pathMat.uniforms.uMode.value = state.mode; needsRender = true; }
+  drawLegend();
+}));
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => fitView(b.dataset.view === 'fit' ? 'iso' : b.dataset.view)));
+const tgs = { tgTravel: 'travel', tgSwaps: 'swaps', tgColl: 'coll', tgDim: 'dim' };
+Object.entries(tgs).forEach(([id, key]) => { const el = $(id); el.checked = !!state[key]; el.addEventListener('change', () => {
+  state[key] = el.checked; savePrefs();
+  if (pathMat) { pathMat.uniforms.uTravel.value = state.travel ? 1 : 0; pathMat.uniforms.uDim.value = state.dim ? 1 : 0; }
+  applyRange(); drawLegend();
+}); });
+document.querySelectorAll('[data-mode]').forEach(x => x.setAttribute('aria-pressed', String(+x.dataset.mode === state.mode)));
+
+// ---------- tabs ----------
+const tabs = ['summary', 'checks', 'tools', 'code'];
+function showTab(name) {
+  tabs.forEach(t => { $('tab-' + t).setAttribute('aria-selected', String(t === name)); $('p-' + t).hidden = t !== name; });
+  try { localStorage.setItem('u1v-tab', name); } catch (e) {}
+  if (name === 'code') scheduleCode(currentIdx());
+}
+tabs.forEach(t => $('tab-' + t).addEventListener('click', () => showTab(t)));
+function currentIdx() { if (!D) return -1; const end = layerEnd(state.lmax), cnt = end - D.lStart[state.lmax]; return state.mv >= cnt ? end - 1 : D.lStart[state.lmax] + state.mv - 1; }
+
+// ---------- G-code text view ----------
+let codeTimer = 0, codeToken = 0;
+function scheduleCode(ci) { if ($('p-code').hidden) return; clearTimeout(codeTimer); codeTimer = setTimeout(() => showCode(ci), 90); }
+async function showCode(ci) {
+  if (!D || !srcBlob || ci < 0 || ci >= D.n) return;
+  const tok = ++codeToken;
+  const off = D.offView[ci], line = D.lnoView[ci];
+  const a = Math.max(0, off - 2200), b = Math.min(srcBlob.size, off + 2600);
+  const buf = new Uint8Array(await srcBlob.slice(a, b).arrayBuffer());
+  if (tok !== codeToken) return;
+  const rel = off - a; const lines = []; let s = 0;
+  for (let i = 0; i <= buf.length; i++) { if (i === buf.length || buf[i] === 10) { lines.push([s, i]); s = i + 1; } }
+  let curK = lines.findIndex(([s0, e0]) => rel >= s0 && rel <= e0); if (curK < 0) curK = 0;
+  const dec = new TextDecoder();
+  const first = a > 0 ? 1 : 0, last = b < srcBlob.size ? lines.length - 1 : lines.length;
+  let html = '';
+  for (let k = first; k < last; k++) {
+    const [s0, e0] = lines[k]; const txt = dec.decode(buf.subarray(s0, e0)).replace(/\r$/, '');
+    const ln = line + (k - curK);
+    const ci2 = txt.indexOf(';');
+    let body;
+    if (ci2 === 0) body = `<span class="cm">${esc(txt)}</span>`;
+    else if (ci2 > 0) body = esc(txt.slice(0, ci2)) + `<span class="cm">${esc(txt.slice(ci2))}</span>`;
+    else body = /^T\d+\s*$/.test(txt) || /^SM_PRINT|^M109|^SWITCH_/.test(txt) ? `<span class="tk">${esc(txt)}</span>` : esc(txt);
+    html += `<div class="ln${k === curK ? ' cur' : ''}"><span>${ln}</span><span>${body || ' '}</span></div>`;
+  }
+  const view = $('codeView'); view.innerHTML = html;
+  const cur = view.querySelector('.cur'); if (cur) view.scrollTop = cur.offsetTop - view.clientHeight / 2 + 10;
+  $('codeNote').textContent = `Showing the line behind the highlighted move${isSample ? ' in the example file' : ''}. Short extrusion segments along a curve are merged for drawing, so the slider can step over several lines.`;
+}
+
+// ---------- checks ----------
+function buildChecks() {
+  const c = D.cfg, out = [];
+  const add = (sev, title, detail, opt = {}) => out.push({ sev, title, detail, ...opt });
+  const usedTools = D.tools.filter(t => t.segs > 0);
+  const types = listCfg(c.filament_type);
+  const typeOf = (t) => (types[t] || '').toUpperCase();
+  const model = c.printer_model || c.printer_settings_id || '';
+  const gen = D.generator || '';
+  // 1 profile
+  if (/snapmaker u1/i.test(model)) add('ok', 'Sliced with the U1 printer profile', `${esc(gen || 'Slicer')} · ${esc(c.printer_settings_id || model)}`, { src: ['orca'] });
+  else if (model) add('warn', `Sliced for a different printer: ${esc(model)}`, 'U1 owners report tool changes knocking prints over when a file made for another printer was sent as is, because the bed is not lowered for the swap. Re-slice with the U1 profile.', { src: ['h2d'] });
+  else add('note', 'No printer profile recorded in the file', 'The slicer settings block is missing, so the checks below fall back to the U1 defaults.', {});
+  // 2 bounds
+  const [bx0, by0, bx1, by1] = D.bed; const tol = 0.05;
+  const oob = [];
+  if (D.bmin[0] < bx0 - tol) oob.push(['X', D.bmin[0], D.bminI[0]]); if (D.bmax[0] > bx1 + tol) oob.push(['X', D.bmax[0], D.bmaxI[0]]);
+  if (D.bmin[1] < by0 - tol) oob.push(['Y', D.bmin[1], D.bminI[1]]); if (D.bmax[1] > by1 + tol) oob.push(['Y', D.bmax[1], D.bmaxI[1]]);
+  if (oob.length) add('error', 'Extrusion leaves the build plate', `Material goes to ${oob.map(o => `${o[0]} ${fmtNum(o[1], 1)} mm`).join(', ')}. The U1 plate spans X ${bx0}–${bx1} and Y ${by0}–${by1} mm.`, { jump: oob[0][2], src: ['specs'] });
+  else if (D.bmax[0] > D.bmin[0]) add('ok', 'Everything stays on the plate', `Extrusion spans X ${fmtNum(D.bmin[0], 1)}–${fmtNum(D.bmax[0], 1)}, Y ${fmtNum(D.bmin[1], 1)}–${fmtNum(D.bmax[1], 1)} mm.`, { src: ['specs'] });
+  if (D.bmax[2] > D.zMax + 0.01) add('error', 'Taller than the build volume', `Top layer at ${fmtNum(D.bmax[2], 2)} mm; the U1 prints up to ${D.zMax} mm.`, { jump: D.bmaxI[2], src: ['specs'] });
+  // 3 collisions
+  const sparse = c.wipe_tower_no_sparse_layers === '1';
+  if (D.collCount > 0) {
+    const first = D.collisions[0]; const after = D.collisions.filter(x => x.afterSwap).length;
+    add('error', `${fmtInt(D.collCount)} travel move${D.collCount > 1 ? 's' : ''} pass${D.collCount > 1 ? '' : 'es'} through printed material`, `The nozzle moves below the top of plastic that's already printed${first ? ` (first at layer ${first.layer}, ${fmtNum(first.top - first.z, 2)} mm below)` : ''}.${after ? (D.collisions.length === 1 ? ' It comes right after a tool swap.' : ` ${after} of the listed cases come right after a tool swap.`) : ''}${sparse ? ' "No sparse layers" is on for the prime tower, which owners have traced collisions to.' : ''}`, { jump: first ? first.i : null, src: sparse ? ['sparse', 'collide'] : ['collide'] });
+  } else if (D.markers > 0) add('ok', 'No travel moves through printed material', 'Every travel stays at or above the plastic already printed beneath it.', { src: ['collide'] });
+  if (sparse && D.collCount === 0) add('warn', '"No sparse layers" is on for the prime tower', 'Owners have reported the head hitting the model with this beta setting. No collision was found in this file, but watch the first swaps.', { src: ['sparse'] });
+  // 4 swaps
+  const sw = D.toolChanges.length;
+  if (sw > 0) {
+    const swapTime = sw * D.swapT;
+    add('note', `${fmtInt(sw)} tool swap${sw === 1 ? '' : 's'}, about ${fmtDur(swapTime)} of docking`, `${fmtNum(D.swapT, 0)} s per swap (the slicer's tool change time; Snapmaker quotes about 5 s). That's ${fmtNum(100 * swapTime / Math.max(1, D.time), 0)}% of this viewer's time estimate. ${(() => { const mx = D.lSwaps.reduce((m, v) => Math.max(m, v), 0); return mx === 1 ? 'At most one swap per layer.' : `Up to ${mx} swaps on a single layer.`; })()}`, { src: ['faq'] });
+    const cold = D.toolChanges.filter(x => x.pre === false).length;
+    if (cold > 0) add('note', `${fmtInt(cold)} swap${cold > 1 ? 's' : ''} pick up a head that wasn't preheated`, 'The change block waits (M109) until the incoming head reaches print temperature. Parked heads otherwise sit at a standby temperature of around 70 °C. Turning on preheating in the slicer\'s multi-material settings shortens these waits.', { jump: (D.toolChanges.find(x => x.pre === false) || {}).i, src: ['faq'] });
+  }
+  if (usedTools.length > 4 || D.tools.some(t => t.t > 3 && t.segs > 0)) add('note', 'Uses tools beyond T3', 'T4 and up are virtual tools. The firmware maps them onto the four heads (SWITCH_OF_EXTENDED_EXTRUDER), as with Full Spectrum mixes.', { src: ['fw'] });
+  // 5 prime tower
+  const tower = D.tType[17] > 0;
+  if (usedTools.length > 1) {
+    if (!tower) add('warn', 'No prime tower', 'Owners printing several colors without a tower report ooze and contamination where a head resumes printing. The tower is where each swapped-in head re-pressurizes.', { src: ['noTower', 'purge'] });
+    else {
+      const pv = parseFloat(c.prime_volume);
+      if (pv >= 30) add('note', `Prime volume is ${fmtNum(pv, 0)} mm³ per swap`, `That's the profile default. Several owners run 10–15 mm³ to cut tower waste and time; go lower only after checking that colors stay clean.`, { src: ['noTower'] });
+      const towerTop = D.towerTop;
+      const brim = parseFloat(c.prime_tower_brim_width);
+      if (towerTop > 60 && brim >= 0 && brim < 10) add('note', `Tall prime tower (${fmtNum(towerTop, 0)} mm) on a ${fmtNum(brim, 0)} mm brim`, 'Towers falling over part-way up is a common report. Owners fixed it with a 10–15 mm tower brim and a 5–10 °C warmer bed.', { src: ['tower'] });
+    }
+  }
+  // 6 materials
+  const usedTypes = new Set(usedTools.map(t => typeOf(t.t)).filter(Boolean));
+  if (usedTypes.has('PLA') && usedTypes.has('PETG') && tower) add('warn', 'PLA and PETG share the prime tower', "PLA and PETG barely bond to each other, so a tower that takes both can come apart part-way up. This is fine on purpose for PETG support interfaces on PLA, but watch the tower.", { src: ['tower'] });
+  const tcr = listCfg(c.filament_retract_length_toolchange), tcr2 = listCfg(c.retract_length_toolchange);
+  usedTools.forEach(t => {
+    if (!/TPU|TPE|FLEX/.test(typeOf(t.t))) return;
+    const r = parseFloat(tcr[t.t] && tcr[t.t] !== 'nil' ? tcr[t.t] : tcr2[t.t]);
+    if (r > 4) add('warn', `T${t.t} is TPU with a ${fmtNum(r, 0)} mm tool-change retraction`, 'Long material-switching retractions buckle flexible filament around the extruder gears and cause no-extrusion errors on the U1. 0–4 mm is the usual advice.', { src: ['tpu'] });
+  });
+  if (usedTypes.has('PETG')) {
+    const firstBed = D.bedTemps.filter(b => !b.printing).map(b => b.s);
+    const bed = firstBed.length ? Math.max(...firstBed) : parseFloat(listCfg(c.textured_plate_temp_initial_layer)[0]);
+    if (bed >= 0 && bed < 60) add('warn', `Bed at ${fmtNum(bed, 0)} °C for PETG`, 'Some Snapmaker PETG profiles shipped with an unusually low or zero bed temperature. PETG usually wants 70–80 °C on PEI.', { src: ['fast', 'tower'] });
+  }
+  // 7 flow and motion
+  if (D.peakFlowAll > U1.maxFlow) add('error', `Peak flow ${fmtNum(D.peakFlowAll, 1)} mm³/s is above the hotend's 32 mm³/s`, 'Expect under-extrusion on the fastest moves. Lower the filament\'s max volumetric speed.', { src: ['specs'] });
+  const mvs = listCfg(c.filament_max_volumetric_speed);
+  usedTools.forEach(t => { const v = parseFloat(mvs[t.t]); if (v > 0 && v < 5) add('note', `T${t.t} is capped at ${fmtNum(v, 1)} mm³/s`, 'A very low max volumetric speed is the usual reason a U1 print slices slower than expected; some generic profiles ship around 2–3 mm³/s. Raise it to what the filament can take.', { src: ['slow'] }); });
+  if (D.maxFeedSeen > U1.maxSpeed + 1) add('note', `Moves requested at up to ${fmtInt(D.maxFeedSeen)} mm/s`, 'The U1 is limited to 500 mm/s, so faster moves are clamped by the firmware.', { src: ['specs'] });
+  if (D.maxAccelSeen > U1.maxAccel) add('note', `Acceleration requested up to ${fmtInt(D.maxAccelSeen)} mm/s²`, 'The U1 is limited to 20,000 mm/s².', { src: ['specs'] });
+  // 8 file and firmware
+  if (D.size > 100e6) add(D.size > 300e6 ? 'warn' : 'note', `Large file (${fmtBytes(D.size)})`, 'Owners report big files timing out while the printer scans them after a network upload (around 400 MB failed). Copying the file over on a USB stick avoids that scan limit.', { src: ['big'] });
+  const unknown = D.cmds.filter(x => !U1_CMDS.has(x.name) && !/^T\d+$/.test(x.name));
+  if (unknown.length) add('warn', `${unknown.length} command${unknown.length > 1 ? 's' : ''} not in the U1 firmware`, `${unknown.slice(0, 8).map(u => esc(u.name)).join(', ')}${unknown.length > 8 ? '…' : ''}. These aren't in Snapmaker's published firmware source. Klipper skips unknown commands with a warning; owners on older firmware have seen this after updating the slicer.`, { src: ['unk', 'fw'], tab: 'code' });
+  else add('ok', 'Every command is known to the U1 firmware', 'All commands appear in Snapmaker\'s published firmware source or the official start G-code.', { src: ['fw'] });
+  if (!D.objects.length && D.markers > 0) add('note', 'Objects are not labeled', 'Without labels you can\'t cancel a single failed object mid-print. Turn on "Label objects" in the slicer.', { src: ['excl'] });
+  else if (D.objects.length) add('ok', `${D.objects.length} labeled object${D.objects.length > 1 ? 's' : ''}`, 'You can cancel any one of them from Fluidd while printing.', { src: ['excl'] });
+  const order = { error: 0, warn: 1, note: 2, ok: 3 };
+  out.sort((a, b) => order[a.sev] - order[b.sev]);
+  return out;
+}
+function renderChecks() {
+  const checks = buildChecks(); D.checks = checks;
+  const n = (s) => checks.filter(c => c.sev === s).length;
+  const el = $('p-checks');
+  const sevName = { error: 'Problem', warn: 'Warning', note: 'Note', ok: 'Fine' };
+  let html = `<div class="checksum">${n('error') ? `<span class="pill error">${n('error')} problem${n('error') > 1 ? 's' : ''}</span>` : ''}${n('warn') ? `<span class="pill warn">${n('warn')} warning${n('warn') > 1 ? 's' : ''}</span>` : ''}${n('note') ? `<span class="pill note">${n('note')} note${n('note') > 1 ? 's' : ''}</span>` : ''}<span class="pill ok">${n('ok')} fine</span></div>`;
+  checks.forEach((c, k) => {
+    html += `<div class="check ${c.sev}"><div class="t"><span>${c.title}</span><span class="sev">${sevName[c.sev]}</span></div><p>${c.detail}</p>`;
+    const acts = [];
+    if (c.jump !== undefined && c.jump !== null) acts.push(`<button class="linkbtn" data-jump="${c.jump}">Show in 3D</button>`);
+    if (c.tab) acts.push(`<button class="linkbtn" data-tab="${c.tab}">See commands</button>`);
+    (c.src || []).forEach(s => acts.push(`<a href="${SRC[s].url}" target="_blank" rel="noopener">${esc(SRC[s].label)}</a>`));
+    if (acts.length) html += `<div class="acts">${acts.join('')}</div>`;
+    html += '</div>';
+  });
+  html += `<p class="note">These checks read the G-code itself. Limits come from Snapmaker's specs and published firmware; the warnings come from problems U1 owners have reported. A check passing doesn't guarantee a good print.</p>`;
+  el.innerHTML = html;
+  el.querySelectorAll('[data-jump]').forEach(b => b.addEventListener('click', () => jumpTo(Math.min(D.n - 1, +b.dataset.jump), true)));
+  el.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { showTab(b.dataset.tab); $('cmdDetails').open = true; }));
+  const badge = $('checkCount'); const bad = n('error'), warn = n('warn');
+  badge.textContent = String(bad + warn); badge.className = 'count' + (bad ? ' bad' : warn ? ' warn' : '');
+}
+
+// ---------- summary ----------
+function renderSummary() {
+  const c = D.cfg, h = D.hdr;
+  const thumb = D.thumbs.slice().sort((a, b) => b.w * b.h - a.w * a.h)[0];
+  const slicerT = parseDur(c['estimated printing time (normal mode)']) || parseDur((h['model printing time'] || '').split('total estimated time:')[1]) || (D.m73R > 0 ? D.m73R * 60 : NaN);
+  const grams = listCfg(c['filament used [g]']).map(parseFloat).filter(v => v > 0);
+  const totalG = parseFloat(c['total filament used [g]']) || grams.reduce((s, v) => s + v, 0);
+  const estG = D.tools.reduce((s, t) => s + Math.max(0, t.netE) * Math.PI * 0.875 * 0.875 / 1000 * 1.24, 0);
+  const layers = D.lStart.length - 1;
+  const height = D.bmax[2] > D.bmin[2] ? D.bmax[2] : 0;
+  const swapT = D.toolChanges.length * D.swapT;
+  const ext = D.tKind[0], trav = D.tKind[1] + D.tKind[2], other = Math.max(0, D.time - ext - trav - swapT);
+  const tot = Math.max(1, D.time);
+  let html = `<div class="filehead"><div class="thumb">${thumb && /PNG|JPG/.test(thumb.fmt) ? `<img alt="Slicer thumbnail" src="data:image/${thumb.fmt === 'JPG' ? 'jpeg' : 'png'};base64,${thumb.data}">` : 'No thumbnail'}</div>
+    <div><p class="name">${esc(D.name)}</p><p>${fmtBytes(D.size)} · ${fmtInt(D.lines)} lines</p><p>${esc(D.generator || 'Unknown slicer')}</p>${c.print_settings_id ? `<p>${esc(c.print_settings_id)}</p>` : ''}</div></div>`;
+  html += `<dl class="kv">
+    <div><dt>Print time, slicer</dt><dd>${fmtDur(slicerT)}</dd></div>
+    <div><dt>Print time, this viewer</dt><dd>${fmtDur(D.time)}</dd></div>
+    <div><dt>Layers</dt><dd>${fmtInt(layers)}</dd></div>
+    <div><dt>Height</dt><dd>${fmtNum(height, 2)} <small>mm</small></dd></div>
+    <div><dt>Tool swaps</dt><dd>${fmtInt(D.toolChanges.length)}</dd></div>
+    <div><dt>Filament</dt><dd>${fmtNum(totalG > 0 ? totalG : estG, 0)} <small>g${totalG > 0 ? '' : ' est.'}</small></dd></div>
+  </dl>`;
+  html += `<div><h3>Where the time goes</h3><div class="stack" style="margin-top:8px" role="img" aria-label="Time split">
+    <i style="width:${100 * ext / tot}%;background:var(--accent)"></i><i style="width:${100 * trav / tot}%;background:var(--muted)"></i><i style="width:${100 * swapT / tot}%;background:var(--note)"></i><i style="width:${100 * other / tot}%;background:var(--line)"></i></div>
+    <div class="keyrow"><span><i style="background:var(--accent)"></i>Extruding ${fmtDur(ext)}</span><span><i style="background:var(--muted)"></i>Travel ${fmtDur(trav)}</span><span><i style="background:var(--note)"></i>Swaps ${fmtDur(swapT)}</span><span><i style="background:var(--line)"></i>Other ${fmtDur(other)}</span></div></div>`;
+  html += `<div><h3>Time per layer</h3><canvas class="chart" id="layerChart" aria-label="Time per layer chart"></canvas><p class="note">Bars are minutes per layer; a dot marks a layer with tool swaps. Click to jump to that layer.</p></div>`;
+  if (D.objects.length) html += `<div><h3>Objects</h3><ul class="objlist">${D.objects.slice(0, 30).map(o => `<li>${esc(o.name)}</li>`).join('')}${D.objects.length > 30 ? `<li>and ${D.objects.length - 30} more</li>` : ''}</ul></div>`;
+  html += `<p class="note">The viewer's estimate models U1 motion (500 mm/s, accelerations from the file, corner velocity 8 mm/s from the firmware config) plus ${fmtNum(D.swapT, 0)} s per swap. It skips heat-up waits and the start routine, so the slicer's figure is usually closer.</p>`;
+  $('p-summary').innerHTML = html;
+  drawLayerChart();
+}
+function drawLayerChart() {
+  const cv = $('layerChart'); if (!cv || !D) return;
+  const w = cv.clientWidth, h = cv.clientHeight; if (!w) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const LN = D.lStart.length; if (LN < 2) return;
+  const padL = 30, padB = 22, cw = w - padL - 4, ch = h - padB - 6;
+  let mx = 0; for (let i = 1; i < LN; i++) mx = Math.max(mx, D.lTime[i]);
+  const mxMin = Math.max(0.1, mx / 60);
+  const step = mxMin > 6 ? Math.ceil(mxMin / 3) : mxMin > 1.5 ? 1 : 0.5;
+  const top = Math.ceil(mxMin / step) * step;
+  g.strokeStyle = cssVar('--line'); g.fillStyle = cssVar('--muted'); g.font = '10px ' + cssVar('--f-mono'); g.lineWidth = 1;
+  for (let v = 0; v <= top + 1e-9; v += step) { const y = 6 + ch - (v / top) * ch; g.beginPath(); g.moveTo(padL, y + 0.5); g.lineTo(w - 4, y + 0.5); g.stroke(); g.fillText(v + 'm', 2, y + 3); }
+  const cols = Math.max(1, Math.floor(cw)); const bars = new Float32Array(cols), sw = new Uint8Array(cols);
+  for (let i = 1; i < LN; i++) { const c = Math.min(cols - 1, Math.floor(((i - 1) / Math.max(1, LN - 2)) * (cols - 1))); bars[c] = Math.max(bars[c], D.lTime[i] / 60); if (D.lSwaps[i]) sw[c] = 1; }
+  g.fillStyle = cssVar('--accent');
+  for (let c = 0; c < cols; c++) { if (!bars[c]) continue; const bh = (bars[c] / top) * ch; g.fillRect(padL + c, 6 + ch - bh, 1, bh); }
+  g.fillStyle = cssVar('--note');
+  for (let c = 0; c < cols; c += 1) if (sw[c]) g.fillRect(padL + c, h - padB + 2, 1, 3);
+  g.fillStyle = cssVar('--muted'); g.fillText('layer 1', padL, h - 1); const lt = `layer ${LN - 1}`; g.fillText(lt, w - 4 - g.measureText(lt).width, h - 1);
+  cv.onclick = (e) => { const r = cv.getBoundingClientRect(); const f = (e.clientX - r.left - padL) / cw; if (f < 0 || f > 1) return; const li = 1 + Math.round(f * (LN - 2)); setLayers(state.lmin, li); };
+}
+
+// ---------- tools ----------
+function renderTools() {
+  const c = D.cfg;
+  const ids = listCfg(c.filament_settings_id), types = listCfg(c.filament_type), temps = listCfg(c.nozzle_temperature), mvs = listCfg(c.filament_max_volumetric_speed), dens = listCfg(c.filament_density);
+  const grams = listCfg(c['filament used [g]']).map(parseFloat);
+  let html = `<p class="note">T numbers are the slicer's logical tools. When you start the print, the U1 maps each one to a physical head (you confirm this on the screen or in Snapmaker Orca's send dialog).</p><div class="tools">`;
+  D.tools.filter(t => t.segs > 0 || t.tcount > 0).forEach(t => {
+    const hex = D.toolHex[t.t];
+    const dn = parseFloat(dens[t.t]) || 1.24;
+    const g = grams[t.t] > 0 ? grams[t.t] : Math.max(0, t.netE) * Math.PI * 0.875 * 0.875 / 1000 * dn;
+    const lum = (() => { const r = hexToRgb(hex); return 0.2126 * r[0] + 0.7152 * r[1] + 0.0722 * r[2]; })();
+    const firstL = D.firstLayerOf[t.t], lastL = D.lastLayerOf[t.t];
+    html += `<div class="tool"><div class="chip" style="background:${hex};color:${lum > 0.55 ? '#1d1c1a' : '#fff'}">T${t.t}</div>
+      <div class="nm">${esc(ids[t.t] || 'Filament ' + t.t)}</div>
+      <div class="meta">${esc(types[t.t] || 'Unknown type')} · ${esc(temps[t.t] ? temps[t.t] + ' °C' : (t.temps.filter(v => v > 150).join(' / ') || '–') + ' °C')}${t.temps.some(v => v > 0 && v < 150) ? ` · parked at ${t.temps.filter(v => v > 0 && v < 150).join(' / ')} °C` : ''}</div>
+      <dl>
+        <div><dt>Filament</dt><dd>${fmtNum(g, 1)} g</dd></div>
+        <div><dt>Swapped in</dt><dd>${fmtInt(t.swapsIn)}×</dd></div>
+        <div><dt>Layers</dt><dd>${firstL >= 0 ? `${firstL}–${lastL}` : '–'}</dd></div>
+        <div><dt>Peak flow</dt><dd>${fmtNum(t.peakFlow, 1)}</dd></div>
+        <div><dt>95% of flow ≤</dt><dd>${fmtNum(t.p95Flow, 1)}</dd></div>
+        <div><dt>Profile max</dt><dd>${mvs[t.t] ? fmtNum(parseFloat(mvs[t.t]), 1) : '–'}</dd></div>
+      </dl></div>`;
+  });
+  html += `</div><p class="note">Flow is in mm³/s. The U1 hotend tops out at 32 mm³/s.</p>`;
+  $('p-tools').innerHTML = html;
+}
+
+// ---------- commands ----------
+function renderCommands() {
+  const rows = D.cmds.slice().sort((a, b) => {
+    const ua = !U1_CMDS.has(a.name) && !/^T\d+$/.test(a.name), ub = !U1_CMDS.has(b.name) && !/^T\d+$/.test(b.name);
+    return (ub - ua) || (b.n - a.n);
+  });
+  let html = '<table class="cmds"><tbody>';
+  rows.forEach(r => { const unk = !U1_CMDS.has(r.name) && !/^T\d+$/.test(r.name); html += `<tr><td class="${unk ? 'unk' : ''}">${esc(r.name)}${unk ? ' · not in U1 firmware' : ''}</td><td class="n">${fmtInt(r.n)}</td></tr>`; });
+  html += '</tbody></table>';
+  $('cmdTable').innerHTML = html;
+}
+
+// ---------- loading ----------
+let worker = null;
+function startWorker() {
+  if (worker) worker.terminate();
+  const blob = new Blob([$('worker-src').textContent], { type: 'text/javascript' });
+  worker = new Worker(URL.createObjectURL(blob));
+  return worker;
+}
+function showLoading(on, title) { $('loading').hidden = !on; if (title) $('loadTitle').textContent = title; }
+function load(source, name, sample) {
+  setPlaying(false);
+  isSample = sample; srcBlob = source instanceof Blob ? source : new Blob([source]);
+  showLoading(true, sample ? 'Building the example print' : `Reading ${name}`);
+  $('progBar').style.width = '0%'; $('progText').textContent = '';
+  const w = startWorker();
+  const t0 = performance.now();
+  w.onmessage = (ev) => {
+    const m = ev.data;
+    if (m.type === 'progress') { $('progBar').style.width = (100 * m.done / m.total).toFixed(1) + '%'; $('progText').textContent = `${fmtBytes(m.done)} of ${fmtBytes(m.total)} · ${fmtInt(m.segs)} moves`; return; }
+    if (m.type === 'error') { $('loadTitle').innerHTML = `<span class="err">Couldn't read this file: ${esc(m.message)}. Check that it's a plain-text .gcode file.</span>`; $('progText').textContent = ''; return; }
+    if (m.type === 'done') {
+      try { onLoaded(m, name, srcBlob.size, performance.now() - t0); }
+      catch (e) { $('loadTitle').innerHTML = `<span class="err">Couldn't display this file: ${esc(e.message)}</span>`; console.error(e); }
+    }
+  };
+  w.onerror = (e) => { $('loadTitle').innerHTML = `<span class="err">The reader stopped: ${esc(e.message || 'unknown error')}</span>`; };
+  if (sample) w.postMessage({ text: source }); else w.postMessage({ file: source });
+}
+function onLoaded(m, name, size, ms) {
+  D = m; D.name = name; D.size = size; D.parseMs = ms;
+  D.ptsView = new Float32Array(m.pts, 0, (m.n + 1) * 3); D.metaView = new Uint8Array(m.meta, 0, m.n * 4); D.sfView = new Uint16Array(m.sf, 0, m.n * 2);
+  D.timView = new Float32Array(m.tim, 0, m.n); D.lnoView = new Uint32Array(m.lno, 0, m.n); D.offView = new Float64Array(m.off, 0, m.n);
+  D.generator = m.hdr.generator || '';
+  const pa = listCfg(m.cfg.printable_area || m.cfg.bed_shape);
+  const xy = pa.map(p => p.split('x').map(Number)).filter(p => p.length === 2 && p.every(isFinite));
+  D.bed = xy.length >= 3 ? [Math.min(...xy.map(p => p[0])), Math.min(...xy.map(p => p[1])), Math.max(...xy.map(p => p[0])), Math.max(...xy.map(p => p[1]))] : U1.bed.slice();
+  D.zMax = parseFloat(m.cfg.printable_height) || U1.height;
+  // per-tool first/last layer and tower height
+  D.firstLayerOf = new Int32Array(32).fill(-1); D.lastLayerOf = new Int32Array(32).fill(-1);
+  for (let i = 1; i < m.lStart.length; i++) { const mk = m.lMask[i]; for (let t = 0; t < 32; t++) if (mk & (1 << t)) { if (D.firstLayerOf[t] < 0) D.firstLayerOf[t] = i; D.lastLayerOf[t] = i; } }
+  D.towerTop = 0; for (let i = 0; i < m.n; i++) { if (D.metaView[i * 4 + 1] === 17 && D.metaView[i * 4 + 2] === 0) { const z = D.ptsView[(i + 1) * 3 + 2]; if (z > D.towerTop) D.towerTop = z; } }
+  buildScene();
+  $('fileLine').textContent = `${name} · ${fmtBytes(size)} · read in ${fmtNum(ms / 1000, 1)} s`;
+  $('sampleBanner').hidden = !isSample;
+  renderSummary(); renderChecks(); renderTools(); renderCommands(); drawLegend();
+  const L = m.lStart.length - 1;
+  lmin.max = String(L); lmax.max = String(L);
+  state.lmin = 0; setLayers(0, L);
+  fitView('iso');
+  showLoading(false);
+}
+
+// ---------- file input & drag-and-drop ----------
+$('fileInput').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; if (f) load(f, f.name, false); e.target.value = ''; });
+$('sampleBtn').addEventListener('click', () => load(makeSample(), 'example-two-colour-vase.gcode', true));
+let dragDepth = 0;
+window.addEventListener('dragenter', (e) => { if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) { dragDepth++; $('drop').hidden = false; e.preventDefault(); } });
+window.addEventListener('dragover', (e) => { e.preventDefault(); });
+window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('drop').hidden = true; });
+window.addEventListener('drop', (e) => { e.preventDefault(); dragDepth = 0; $('drop').hidden = true; const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) load(f, f.name, false); });
+
+// ---------- theme changes redraw canvases ----------
+const reTheme = () => { drawHist(); drawLayerChart(); };
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', reTheme); } catch (e) {}
+new MutationObserver(reTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// ---------- example print ----------
+function makeSample() {
+  const L = [], p = (s) => L.push(s);
+  const FA = Math.PI * 0.875 * 0.875, cx = 135, cy = 130, R = 24, H = 0.2, first = 0.25, NL = 90, w = 0.45;
+  let e = 0;
+  const E = (len, h) => (len * w * h / FA);
+  p('; HEADER_BLOCK_START'); p('; generated by U1 G-code Viewer example generator on 2026-11-06 at 12:00:00'); p(`; total layer number: ${NL}`); p('; max_z_height: ' + (first + (NL - 1) * H).toFixed(2)); p('; HEADER_BLOCK_END'); p('');
+  p('; EXECUTABLE_BLOCK_START'); p(';TYPE:Custom'); p('PRINT_START'); p(`SET_PRINT_STATS_INFO TOTAL_LAYER=${NL} CURRENT_LAYER=0`); p('M140 S60'); p('M104 T0 S140'); p('M204 S10000');
+  p('G28 X Y'); p('T0'); p('G90'); p('SM_PRINT_CHECK_SWITCH_EXTRUDER'); p('G28 Z'); p('M190 S60');
+  p('BED_MESH_CALIBRATE PROBE_COUNT=11,11'); p('EXCLUDE_OBJECT_DEFINE NAME=Twist_vase CENTER=135,130 POLYGON=[[111,106],[159,106],[159,154],[111,154],[111,106]]');
+  p('G90'); p('G1 Z1.5'); p('G0 X85 Y1 Z2 F18000'); p('M109 S220'); p('G1 Z0.2'); p('M83'); p('G1 X185 E15 F360'); p('G1 Z1.5'); p('G90'); p('M106 S0');
+  let tool = 0, used = { 0: true };
+  const tower = (z, h, t) => {
+    p('; WIPE_TOWER_START'); p(';TYPE:Prime tower'); p(`;WIDTH:${w}`);
+    const x0 = 20, y0 = 222, s = 26; p(`G1 X${x0} Y${y0} F30000`); p(`G1 Z${z.toFixed(3)} F600`);
+    const ring = [[x0, y0], [x0 + s, y0], [x0 + s, y0 + s], [x0, y0 + s], [x0, y0]];
+    for (let r = 0; r < 3; r++) { const o = r * 0.45; const rr = [[x0 + o, y0 + o], [x0 + s - o, y0 + o], [x0 + s - o, y0 + s - o], [x0 + o, y0 + s - o], [x0 + o, y0 + o]];
+      p(`G1 X${rr[0][0].toFixed(3)} Y${rr[0][1].toFixed(3)} F12000`); for (let k = 1; k < rr.length; k++) p(`G1 X${rr[k][0].toFixed(3)} Y${rr[k][1].toFixed(3)} E${E(s - 2 * o, h).toFixed(5)} F4800`); }
+    for (let k = 0; k < 8; k++) { const y = y0 + 3 + k * 2.6; p(`G1 X${(x0 + 2).toFixed(3)} Y${y.toFixed(3)} F12000`); p(`G1 X${(x0 + s - 2).toFixed(3)} Y${y.toFixed(3)} E${E(s - 4, h).toFixed(5)} F6000`); }
+    p('G1 E-1.5 F1800'); p('; WIPE_TOWER_END');
+  };
+  const change = (t, layer, z, h) => {
+    p(`M104 S70 T${tool}`);
+    p(`; Change Tool${tool} -> Tool${t} (layer ${layer})`); p('G1 E-10 F1800'); p('G91'); p('G1 Z1.5 F1800'); p('G90'); p('G1 F21000'); p(`; ${layer}`); p(`M109 S220 T${t}`); p('M400'); p(`T${t}`);
+    if (!used[t]) { p(`SM_PRINT_PREEXTRUDE_FILAMENT INDEX=${t}`); used[t] = true; }
+    p('G90'); tool = t; p('G1 E10 F1800');
+    tower(z, h, t);
+  };
+  for (let k = 0; k < NL; k++) {
+    const z = first + k * H, h = k === 0 ? first : H;
+    p(';LAYER_CHANGE'); p(`;Z:${z.toFixed(3)}`); p(`;HEIGHT:${h.toFixed(3)}`); p(`G1 Z${z.toFixed(3)} F600`); p(';AFTER_LAYER_CHANGE'); p(`SET_PRINT_STATS_INFO TOTAL_LAYER=${NL} CURRENT_LAYER=${k + 1}`);
+    if (k === 1) p('M106 S255');
+    p('EXCLUDE_OBJECT_START NAME=Twist_vase');
+    const rz = R * (0.82 + 0.18 * Math.cos(z / 18 * Math.PI)), lob = 0.08;
+    const pt = (a, r) => { const rr = r * (1 + lob * Math.cos(6 * a)); return [cx + rr * Math.cos(a), cy + rr * Math.sin(a)]; };
+    const stripe = (a) => ((Math.floor((a / (2 * Math.PI)) * 12 + z * 0.09) % 2) + 2) % 2;
+    const order = k % 2 === 0 ? [tool, 1 - tool] : [tool, 1 - tool];
+    for (const t of order) {
+      if (t !== tool) change(t, k, z, h);
+      else if (k > 0) p(`M104 S220 T${1 - t} ; preheat the next head`);
+      if (k < 3 && t === 0) {
+        p(';TYPE:Bottom surface'); p(`;WIDTH:${w}`);
+        for (let yy = -rz * 0.86; yy <= rz * 0.86; yy += 0.45) { const half = Math.sqrt(Math.max(0, (rz * 0.88) ** 2 - yy * yy)); const dir = Math.round(yy / 0.45) % 2 === 0; const xa = cx - half, xb = cx + half; p(`G1 X${(dir ? xa : xb).toFixed(3)} Y${(cy + yy).toFixed(3)} F12000`); p(`G1 X${(dir ? xb : xa).toFixed(3)} Y${(cy + yy).toFixed(3)} E${E(2 * half, h).toFixed(5)} F${k === 0 ? 3000 : 9000}`); }
+      }
+      if (t === 0) {
+        p(';TYPE:Inner wall'); p(`;WIDTH:${w}`);
+        const N = 180; let prev = pt(0, rz - 0.45); p(`G1 X${prev[0].toFixed(3)} Y${prev[1].toFixed(3)} F15000`);
+        for (let j = 1; j <= N; j++) { const q = pt(j / N * 2 * Math.PI, rz - 0.45); p(`G1 X${q[0].toFixed(3)} Y${q[1].toFixed(3)} E${E(Math.hypot(q[0] - prev[0], q[1] - prev[1]), h).toFixed(5)} F${k === 0 ? 2400 : 9000}`); prev = q; }
+      }
+      p(';TYPE:Outer wall'); p(`;WIDTH:${w}`);
+      const N = 240; let on = false, prev = null;
+      for (let j = 0; j <= N; j++) {
+        const a = j / N * 2 * Math.PI, q = pt(a, rz), mine = stripe(a) === t;
+        if (mine && !on) { p(`G1 X${q[0].toFixed(3)} Y${q[1].toFixed(3)} F15000`); on = true; prev = q; continue; }
+        if (mine && on) { p(`G1 X${q[0].toFixed(3)} Y${q[1].toFixed(3)} E${E(Math.hypot(q[0] - prev[0], q[1] - prev[1]), h).toFixed(5)} F${k === 0 ? 2400 : 6000}`); prev = q; }
+        if (!mine && on) { on = false; p(';WIPE_START'); p('G1 E-0.8 F1800'); p(';WIPE_END'); }
+      }
+    }
+    p('EXCLUDE_OBJECT_END NAME=Twist_vase');
+  }
+  p(';TYPE:Custom'); p('PRINT_END'); p('TIMELAPSE_STOP'); p('; EXECUTABLE_BLOCK_END'); p('');
+  p('; CONFIG_BLOCK_START');
+  p('; enable_prime_tower = 1'); p('; extruder_colour = #F1EEE6;#2F6DA8'); p('; filament_colour = #F1EEE6;#2F6DA8'); p('; filament_density = 1.24,1.24');
+  p('; filament_max_volumetric_speed = 15,15'); p('; filament_retract_length_toolchange = 10,10'); p('; filament_settings_id = "Example PLA White";"Example PLA Blue"'); p('; filament_type = PLA;PLA');
+  p('; machine_tool_change_time = 5'); p('; nozzle_temperature = 220,220'); p('; prime_tower_brim_width = 5'); p('; prime_volume = 15');
+  p('; print_settings_id = Example 0.20 mm'); p('; printable_area = 0.5x1,270.5x1,270.5x271,0.5x271'); p('; printable_height = 270.05'); p('; printer_model = Snapmaker U1'); p('; printer_settings_id = Snapmaker U1 (0.4 nozzle)');
+  p('; textured_plate_temp_initial_layer = 60,60'); p('; wipe_tower_no_sparse_layers = 0');
+  p('; CONFIG_BLOCK_END');
+  return L.join('\n');
+}
+
+// ---------- boot ----------
+if (!glOk || typeof THREE === 'undefined') {
+  showLoading(true, typeof THREE === 'undefined' ? 'The 3D library didn\'t load. Check your connection and reload.' : 'This browser can\'t show the 3D view (WebGL 2 is off).');
+} else {
+  initGL();
+  try { const t = localStorage.getItem('u1v-tab'); if (t && tabs.includes(t)) showTab(t); } catch (e) {}
+  load(makeSample(), 'example-two-colour-vase.gcode', true);
+}
+})();
+</script>
+</body>
+</html>
