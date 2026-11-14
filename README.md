@@ -16,6 +16,49 @@ The page loads three.js from jsDelivr and its fonts from Google Fonts, so it nee
 - **The G-code behind any move**, with the matching line highlighted.
 - **A summary**: the slicer's print time next to the viewer's own estimate, a breakdown of time spent extruding, travelling and swapping, time per layer, filament per tool, and labeled objects.
 
+## Sending a print to the printer
+
+**Send to printer** uploads the open file to the U1 through Moonraker, the API behind Fluidd. It sends the same upload request Fluidd does, and can start the print straight away.
+
+1. Open your G-code file, then click **Send to printer**.
+2. Enter the address you open Fluidd at, for example `192.168.1.50`. **Test connection** shows whether the printer is reachable and whether it's idle.
+3. Leave **Start printing as soon as it's uploaded** ticked to print right away, or untick it to only add the file to the printer's file list.
+
+Some safeguards:
+
+- If the Checks tab lists any problems, you have to tick a box to start the print anyway. Uploading without printing doesn't need it.
+- If the printer is already printing or paused, or Klipper isn't ready, the file is only uploaded.
+- The address (and API key, if you set one) is remembered in this browser only, unless you untick **Remember**.
+
+### If it can't reach the printer
+
+The browser talks to the printer directly, so Moonraker has to accept requests from this page. If Fluidd opens but the viewer says it can't reach the printer, add the page's origin to `cors_domains` in `moonraker.conf` and restart Moonraker. The dialog tells you which origin to add.
+
+The safest setup is to serve the viewer from your own computer and allow just that address:
+
+```bash
+python -m http.server 8000
+```
+
+Run that in the viewer's folder, open `http://localhost:8000`, and add this to `moonraker.conf`:
+
+```ini
+[authorization]
+cors_domains:
+    http://localhost:8000
+```
+
+If you open `index.html` straight from disk, the browser reports the page's origin as `null`. Adding `null` to `cors_domains` works, but it also lets any other HTML file opened from disk control the printer, so prefer the local server.
+
+Two browser rules also apply:
+
+- A page served over **HTTPS** (such as GitHub Pages) can't call a printer over plain HTTP. Use the viewer from your computer instead.
+- Recent versions of Chrome and Edge may ask for permission to access devices on your local network the first time. Allow it.
+
+Moonraker lets addresses listed in `trusted_clients` in without an API key. If yours does ask for one, paste it under **API key**. Moonraker shows the key at `http://<printer>/access/api_key` to a client it already trusts.
+
+This was tested against a simulated Moonraker server, not a real U1. Snapmaker's stock `moonraker.conf` may not allow other origins until you add one.
+
 ## What it checks
 
 Every check links to the source it comes from.

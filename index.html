@@ -170,6 +170,28 @@ button, select, input { font: inherit; color: inherit; }
 .cmds .unk { color: var(--warn); font-weight: 600; }
 details summary { cursor: pointer; font-weight: 500; }
 .objlist { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn:disabled:hover { border-color: var(--line); }
+dialog.send { width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); padding: 18px 20px; }
+dialog.send::backdrop { background: rgba(10,10,12,.55); }
+dialog.send h2 { margin: 0 0 4px; font: 700 18px/1.2 var(--f-display); }
+dialog.send form { display: flex; flex-direction: column; gap: 12px; }
+dialog.send .field { display: flex; flex-direction: column; gap: 4px; }
+dialog.send .field > span { font-size: 12.5px; font-weight: 500; }
+dialog.send input[type="text"], dialog.send input[type="password"] { border: 1px solid var(--line); background: var(--bg); border-radius: 7px; padding: 7px 10px; font: 13px var(--f-mono); min-width: 0; }
+dialog.send .hint { font-size: 12px; color: var(--muted); margin: 0; }
+dialog.send .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+dialog.send .row.end { justify-content: flex-end; }
+dialog.send label.tick { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+dialog.send label.tick input { margin-top: 3px; accent-color: var(--accent); }
+dialog.send .status { font-size: 12.5px; border-radius: 8px; padding: 8px 10px; background: var(--chip); overflow-wrap: anywhere; }
+dialog.send .status.ok { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+dialog.send .status.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+dialog.send .status.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+dialog.send .status a { color: inherit; font-weight: 600; }
+dialog.send .prog { width: 100%; background: var(--chip); }
+dialog.send .prog i { background: var(--accent); }
+dialog.send .filebox { font: 12.5px var(--f-mono); color: var(--muted); overflow-wrap: anywhere; margin: 0; }
 @media (max-width: 960px) {
   .work { grid-template-columns: minmax(0, 1fr); }
   .stage { min-height: 0; height: 60vh; flex: none; }
@@ -200,10 +222,40 @@ details summary { cursor: pointer; font-weight: 500; }
     </div>
     <div class="railbtns">
       <button class="btn" id="sampleBtn" type="button">Load example</button>
+      <button class="btn" id="sendBtn" type="button" disabled title="Open your own G-code file to send it">Send to printer</button>
       <label class="btn primary" for="fileInput">Open G-code</label>
       <input type="file" id="fileInput" accept=".gcode,.gco,.g,.txt" hidden>
     </div>
   </header>
+
+  <dialog class="send" id="sendDlg" aria-labelledby="sendTitle">
+    <form method="dialog" id="sendForm">
+      <div>
+        <h2 id="sendTitle">Send to printer</h2>
+        <p class="filebox" id="sendFile"></p>
+      </div>
+      <label class="field"><span>Printer address</span>
+        <input type="text" id="sendHost" placeholder="192.168.1.50 or http://u1.local" autocomplete="off" spellcheck="false" required>
+        <p class="hint">The address you open Fluidd at. The file goes to the printer's Moonraker API, the same way Fluidd uploads it.</p>
+      </label>
+      <details id="sendKeyBox"><summary>API key (only if your printer asks for one)</summary>
+        <label class="field" style="margin-top:8px"><span>Moonraker API key</span>
+          <input type="password" id="sendKey" autocomplete="off" spellcheck="false">
+          <p class="hint">Kept in this browser only if you tick "Remember" below.</p>
+        </label>
+      </details>
+      <label class="tick"><input type="checkbox" id="sendStart" checked> <span>Start printing as soon as it's uploaded</span></label>
+      <label class="tick" id="sendAckRow" hidden><input type="checkbox" id="sendAck"> <span id="sendAckText"></span></label>
+      <label class="tick"><input type="checkbox" id="sendRemember" checked> <span>Remember the address in this browser</span></label>
+      <div class="status" id="sendStatus" hidden role="status" aria-live="polite"></div>
+      <div class="prog" id="sendProg" hidden><i id="sendProgBar"></i></div>
+      <div class="row end">
+        <button class="btn" type="button" id="sendTest">Test connection</button>
+        <button class="btn" type="button" id="sendCancel">Close</button>
+        <button class="btn primary" type="submit" id="sendGo">Upload and print</button>
+      </div>
+    </form>
+  </dialog>
 
   <main class="work">
     <section class="stage-col">
@@ -1504,6 +1556,7 @@ function onLoaded(m, name, size, ms) {
   buildScene();
   $('fileLine').textContent = `${name} · ${fmtBytes(size)} · read in ${fmtNum(ms / 1000, 1)} s`;
   $('sampleBanner').hidden = !isSample;
+  $('sendBtn').disabled = isSample; $('sendBtn').title = isSample ? 'Open your own G-code file to send it' : 'Upload this file to your printer through Moonraker';
   renderSummary(); renderChecks(); renderTools(); renderCommands(); drawLegend();
   const L = m.lStart.length - 1;
   lmin.max = String(L); lmax.max = String(L);
@@ -1520,6 +1573,141 @@ window.addEventListener('dragenter', (e) => { if (e.dataTransfer && Array.from(e
 window.addEventListener('dragover', (e) => { e.preventDefault(); });
 window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('drop').hidden = true; });
 window.addEventListener('drop', (e) => { e.preventDefault(); dragDepth = 0; $('drop').hidden = true; const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) load(f, f.name, false); });
+
+// ---------- send to printer (Moonraker, the API behind Fluidd) ----------
+// Uploads the open file with POST /server/files/upload, the same request Fluidd makes.
+// The browser talks to the printer directly, so Moonraker has to allow this page's origin (cors_domains).
+const SEND_KEY = 'u1v-printer';
+const sendDlg = $('sendDlg');
+function loadPrinterPrefs() { try { return JSON.parse(localStorage.getItem(SEND_KEY) || '{}') || {}; } catch (e) { return {}; } }
+function savePrinterPrefs(p) { try { if (p) localStorage.setItem(SEND_KEY, JSON.stringify(p)); else localStorage.removeItem(SEND_KEY); } catch (e) {} }
+function printerBase(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return null;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) s = 'http://' + s;
+  try { const u = new URL(s); if (!/^https?:$/.test(u.protocol) || !u.hostname) return null; return u.origin; } catch (e) { return null; }
+}
+function setSendStatus(kind, html) { const el = $('sendStatus'); el.hidden = !html; el.className = 'status' + (kind ? ' ' + kind : ''); el.innerHTML = html || ''; }
+function sendHeaders() { const k = $('sendKey').value.trim(); return k ? { 'X-Api-Key': k } : {}; }
+function corsHelp(base) {
+  const origin = location.origin && location.origin !== 'null' ? location.origin : null;
+  const add = origin ? esc(origin) : '<code>null</code> (this page was opened from a file on disk; serving it with a local web server is safer, see the README)';
+  return `Couldn't reach Moonraker at ${esc(base)}. Check the address opens Fluidd in a new tab and that this computer is on the printer's network. If Fluidd opens but this still fails, the printer is blocking requests from this page: add ${add} to <code>cors_domains</code> under <code>[authorization]</code> in <code>moonraker.conf</code>, then restart Moonraker.${location.protocol === 'https:' && base.startsWith('http:') ? ' This page is served over HTTPS, and browsers block it from calling a printer over plain HTTP. Download index.html and open it from your computer instead.' : ''}`;
+}
+async function mrGet(base, path, ms = 6000) {
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(base + path, { headers: sendHeaders(), signal: ctl.signal, cache: 'no-store' });
+    let body = null; try { body = await r.json(); } catch (e) {}
+    if (!r.ok) { const msg = body && body.error && body.error.message || r.statusText || ('HTTP ' + r.status); const err = new Error(msg); err.status = r.status; throw err; }
+    return body && 'result' in body ? body.result : body;
+  } finally { clearTimeout(tm); }
+}
+// Returns { info, klippy, job } or throws.
+async function printerStatus(base) {
+  const info = await mrGet(base, '/server/info');
+  let klippy = info && info.klippy_state || 'unknown', job = 'unknown';
+  if (klippy === 'ready') {
+    try { const q = await mrGet(base, '/printer/objects/query?webhooks&print_stats'); const st = q && q.status || {}; job = st.print_stats && st.print_stats.state || 'unknown'; klippy = st.webhooks && st.webhooks.state || klippy; } catch (e) {}
+  }
+  return { info, klippy, job };
+}
+function authHelp(e) { return e && (e.status === 401 || e.status === 403) ? ' The printer wants an API key: open "API key", paste the key Moonraker shows at /access/api_key, and try again.' : ''; }
+function describeErr(base, e) {
+  if (e && e.name === 'AbortError') return `The printer at ${esc(base)} didn't answer within a few seconds. Check the address and that the printer is on.`;
+  if (e && e.status) return `The printer answered with an error: ${esc(e.message)}.${authHelp(e)}`;
+  return corsHelp(base);
+}
+function refreshAck() {
+  const errs = D && D.checks ? D.checks.filter(c => c.sev === 'error').length : 0;
+  const show = errs > 0 && $('sendStart').checked;
+  $('sendAckRow').hidden = !show;
+  $('sendAckText').textContent = `The Checks tab found ${errs} problem${errs === 1 ? '' : 's'} in this file. Start the print anyway.`;
+  $('sendGo').textContent = $('sendStart').checked ? 'Upload and print' : 'Upload';
+}
+let sendXhr = null;
+function openSend() {
+  if (!D || isSample) return;
+  const p = loadPrinterPrefs();
+  if (p.host && !$('sendHost').value) $('sendHost').value = p.host;
+  if (p.key && !$('sendKey').value) { $('sendKey').value = p.key; $('sendKeyBox').open = true; }
+  $('sendFile').textContent = `${D.name} · ${fmtBytes(D.size)}`;
+  $('sendAck').checked = false; setSendStatus('', ''); $('sendProg').hidden = true;
+  refreshAck();
+  if (typeof sendDlg.showModal === 'function') sendDlg.showModal(); else sendDlg.setAttribute('open', '');
+  ($('sendHost').value ? $('sendGo') : $('sendHost')).focus();
+}
+function closeSend() { if (sendXhr) return; if (sendDlg.open) { if (typeof sendDlg.close === 'function') sendDlg.close(); else sendDlg.removeAttribute('open'); } }
+function busy(on) { ['sendTest', 'sendGo', 'sendHost', 'sendKey'].forEach(id => { $(id).disabled = on; }); $('sendCancel').textContent = on ? 'Cancel' : 'Close'; }
+function rememberPrinter() {
+  if ($('sendRemember').checked) savePrinterPrefs({ host: $('sendHost').value.trim(), key: $('sendKey').value.trim() || undefined });
+  else savePrinterPrefs(null);
+}
+function fluiddLink(base) { return `<a href="${esc(base)}" target="_blank" rel="noopener">Open Fluidd</a>`; }
+async function testPrinter() {
+  const base = printerBase($('sendHost').value);
+  if (!base) { setSendStatus('bad', 'Enter the printer\'s address, for example 192.168.1.50.'); return; }
+  busy(true); setSendStatus('', `Contacting ${esc(base)}…`);
+  try {
+    const s = await printerStatus(base);
+    const ver = s.info && s.info.moonraker_version ? ` (Moonraker ${esc(s.info.moonraker_version)})` : '';
+    const jobTxt = { standby: 'idle', complete: 'idle, last print finished', cancelled: 'idle, last print cancelled', error: 'idle, last print stopped with an error', printing: 'printing', paused: 'paused' }[s.job] || s.job;
+    if (s.klippy !== 'ready') setSendStatus('warn', `Connected${ver}, but Klipper isn't ready (${esc(s.klippy)}). You can upload the file, but it can't start printing until Klipper is ready. ${fluiddLink(base)}`);
+    else setSendStatus('ok', `Connected${ver}. The printer is ${esc(jobTxt)}. ${fluiddLink(base)}`);
+    rememberPrinter();
+  } catch (e) { setSendStatus('bad', describeErr(base, e)); }
+  finally { busy(false); }
+}
+async function sendToPrinter() {
+  const base = printerBase($('sendHost').value);
+  if (!base) { setSendStatus('bad', 'Enter the printer\'s address, for example 192.168.1.50.'); return; }
+  let start = $('sendStart').checked;
+  if (start && !$('sendAckRow').hidden && !$('sendAck').checked) { setSendStatus('warn', 'This file has problems listed in the Checks tab. Tick the box above to start it anyway, or untick "Start printing" to only upload it.'); return; }
+  busy(true); setSendStatus('', `Checking the printer at ${esc(base)}…`);
+  let note = '';
+  try {
+    const s = await printerStatus(base);
+    if (start && (s.job === 'printing' || s.job === 'paused')) { start = false; note = `The printer is ${s.job === 'paused' ? 'paused on' : 'busy with'} another print, so the file was only uploaded. `; }
+    else if (start && s.klippy !== 'ready') { start = false; note = `Klipper isn't ready (${esc(s.klippy)}), so the file was only uploaded. `; }
+  } catch (e) { setSendStatus('bad', describeErr(base, e)); busy(false); return; }
+  rememberPrinter();
+  const name = (D.name || 'print.gcode').replace(/[\\/:*?"<>|]+/g, '_');
+  const fd = new FormData();
+  fd.append('root', 'gcodes');
+  if (start) fd.append('print', 'true');
+  fd.append('file', srcBlob, name);
+  $('sendProg').hidden = false; $('sendProgBar').style.width = '0%';
+  setSendStatus('', `Uploading ${esc(name)}…`);
+  const xhr = sendXhr = new XMLHttpRequest();
+  xhr.open('POST', base + '/server/files/upload');
+  const hk = sendHeaders(); Object.keys(hk).forEach(k => xhr.setRequestHeader(k, hk[k]));
+  xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) { $('sendProgBar').style.width = (100 * ev.loaded / ev.total).toFixed(1) + '%'; setSendStatus('', `Uploading ${esc(name)}: ${fmtBytes(ev.loaded)} of ${fmtBytes(ev.total)}`); } };
+  const done = () => { sendXhr = null; busy(false); };
+  xhr.onload = () => {
+    done();
+    let body = null; try { body = JSON.parse(xhr.responseText); } catch (e) {}
+    if (xhr.status < 200 || xhr.status >= 300) {
+      const msg = body && body.error && body.error.message || xhr.statusText || ('HTTP ' + xhr.status);
+      setSendStatus('bad', `The printer refused the upload: ${esc(msg)}.${authHelp({ status: xhr.status })}`); return;
+    }
+    const r = body && body.result && !body.item ? body.result : body || {};
+    const path = r.item && r.item.path || name;
+    $('sendProgBar').style.width = '100%';
+    if (start && r.print_started) setSendStatus('ok', `Uploaded ${esc(path)} and started the print. ${fluiddLink(base)}`);
+    else if (start && r.print_queued) setSendStatus('ok', `Uploaded ${esc(path)} and added it to the printer's job queue. ${fluiddLink(base)}`);
+    else if (start) setSendStatus('warn', `Uploaded ${esc(path)}, but the printer didn't start it. Start it from Fluidd. ${fluiddLink(base)}`);
+    else setSendStatus(note ? 'warn' : 'ok', `${note}Uploaded ${esc(path)} to the printer's files. ${fluiddLink(base)}`);
+  };
+  xhr.onerror = () => { done(); setSendStatus('bad', `The upload failed partway. ${corsHelp(base)}`); };
+  xhr.onabort = () => { done(); $('sendProg').hidden = true; setSendStatus('warn', 'Upload cancelled. Nothing was printed.'); };
+  xhr.send(fd);
+}
+$('sendBtn').addEventListener('click', openSend);
+$('sendTest').addEventListener('click', testPrinter);
+$('sendStart').addEventListener('change', refreshAck);
+$('sendCancel').addEventListener('click', () => { if (sendXhr) sendXhr.abort(); else closeSend(); });
+$('sendForm').addEventListener('submit', (e) => { e.preventDefault(); sendToPrinter(); });
+sendDlg.addEventListener('cancel', (e) => { if (sendXhr) e.preventDefault(); });
 
 // ---------- theme changes redraw canvases ----------
 const reTheme = () => { drawHist(); drawLayerChart(); };
