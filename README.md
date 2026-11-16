@@ -22,7 +22,19 @@ The page loads three.js from jsDelivr and its fonts from Google Fonts, so it nee
 
 ### Opening the viewer
 
-The browser sends the file straight to the printer, and the U1 only accepts that from a page served on your own computer at `localhost`. Double-clicking `index.html` opens it from disk, which the printer refuses, so serve the folder instead. You need [Python](https://www.python.org/downloads/).
+The browser sends the file straight to the printer, and the U1 only accepts that from a page served on your own computer at `localhost`. Double-clicking `index.html` opens it from disk, which the printer refuses. Use one of these instead. Both need [Python](https://www.python.org/downloads/).
+
+**On Windows: the U1 Viewer shortcut (easiest).** Double-click **Install shortcuts.cmd** once. It adds a **U1 Viewer** shortcut to your Desktop and Start menu. To pin it to the taskbar, open Start, right-click **U1 Viewer**, then **Pin to taskbar**.
+
+Clicking the shortcut opens the viewer in its own Chrome or Edge window, without tabs or an address bar. Behind it, `launcher/u1_viewer.pyw` serves the page at `http://localhost:8765`:
+
+- It's visible to this computer only, and serves only the viewer page, not the rest of the folder.
+- Clicking the shortcut again opens another window instead of starting a second server.
+- The server stops by itself after two hours without page loads. Windows that are already open keep working.
+- To remove the shortcuts, run `python launcher\u1_viewer.pyw --uninstall`.
+- If you move this folder, run **Install shortcuts.cmd** again.
+
+**Anywhere: run a server yourself.**
 
 1. In the viewer's folder, run:
 
@@ -35,7 +47,9 @@ The browser sends the file straight to the printer, and the U1 only accepts that
 
 `--bind 127.0.0.1` keeps the server visible to your computer only. Don't use `--bind 0.0.0.0`: it shares the folder with every device on your network.
 
-**In the Claude desktop app:** the repo includes `.claude/launch.json`. In a Claude Code session in this folder, ask Claude to "open the U1 viewer", and it starts the server and opens the viewer in Claude's browser pane, at `http://localhost:8765`.
+**In the Claude desktop app:** the repo includes `.claude/launch.json`. In a Claude Code session in this folder, ask Claude to "open the U1 viewer", and it opens the viewer in Claude's browser pane, at `http://localhost:8765`.
+
+Each browser remembers the printer address separately, so enter it once in each.
 
 ### Sending a file
 
