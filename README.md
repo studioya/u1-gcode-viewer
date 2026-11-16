@@ -4,7 +4,7 @@ A 3D G-code viewer and pre-print checker for the **Snapmaker U1** tool changer. 
 
 ## Using it
 
-Open `index.html` in a recent desktop browser (Chrome, Edge, Firefox or Safari with WebGL 2). Drop a `.gcode` file on the page or use **Open G-code**. An example two-colour print loads on start.
+Open `index.html` in a recent desktop browser (Chrome, Edge, Firefox or Safari with WebGL 2). To send prints to the printer, open it through a small local web server instead (see [Sending a print to the printer](#sending-a-print-to-the-printer)). Drop a `.gcode` file on the page or use **Open G-code**. An example two-colour print loads on start.
 
 The page loads three.js from jsDelivr and its fonts from Google Fonts, so it needs an internet connection the first time.
 
@@ -18,7 +18,27 @@ The page loads three.js from jsDelivr and its fonts from Google Fonts, so it nee
 
 ## Sending a print to the printer
 
-**Send to printer** uploads the open file to the U1 through Moonraker, the API behind Fluidd. It sends the same upload request Fluidd does, and can start the print straight away.
+**Send to printer** uploads the open file to the U1 through Moonraker, the API behind Fluidd. It sends the same upload request Fluidd does, and can start the print straight away. It works with stock U1 firmware, with no changes to the printer's settings, as long as you open the viewer the way described below.
+
+### Setting it up
+
+The browser sends the file straight to the printer, and Moonraker only accepts that from a page served by a computer on your home network. Opening `index.html` by double-clicking it, or from `localhost`, doesn't work. Serve it from your computer's network address instead:
+
+1. Put `index.html` in a folder of its own, for example `C:\U1Viewer`. Everything in the folder you serve can be opened by any device on your network while the server runs, so don't serve your Downloads or user folder.
+2. Find your computer's network address. On Windows, run `ipconfig` and look for **IPv4 Address** under your Wi-Fi or Ethernet adapter, for example `10.0.0.12`.
+3. Start a small web server for that folder (needs [Python](https://www.python.org/downloads/)):
+
+   ```bash
+   python -m http.server 8000 --bind 0.0.0.0 --directory "C:\U1Viewer"
+   ```
+
+   If Windows asks whether Python can use the network, allow it for **private networks** only.
+4. Open `http://<your address>:8000/index.html`, for example `http://10.0.0.12:8000/index.html`. Use the address, not `localhost`.
+5. Press **Ctrl+C** in that window to stop the server when you're done.
+
+Your computer's address can change after a router restart. If the page stops loading, run `ipconfig` again.
+
+### Sending a file
 
 1. Open your G-code file, then click **Send to printer**.
 2. Enter the address you open Fluidd at, for example `192.168.1.50`. **Test connection** shows whether the printer is reachable and whether it's idle.
@@ -28,36 +48,19 @@ Some safeguards:
 
 - If the Checks tab lists any problems, you have to tick a box to start the print anyway. Uploading without printing doesn't need it.
 - If the printer is already printing or paused, or Klipper isn't ready, the file is only uploaded.
-- The address (and API key, if you set one) is remembered in this browser only, unless you untick **Remember**.
+- The printer address (and API key, if you set one) is remembered in this browser only, unless you untick **Remember**.
 
 ### If it can't reach the printer
 
-The browser talks to the printer directly, so Moonraker has to accept requests from this page. If Fluidd opens but the viewer says it can't reach the printer, add the page's origin to `cors_domains` in `moonraker.conf` and restart Moonraker. The dialog tells you which origin to add.
+- **Check the page address.** It has to start with your computer's network address, like `http://10.0.0.12:8000`, not `localhost` or `file://`.
+- **Check Fluidd opens** at the printer address from the same computer.
+- **Allow local network access.** Recent versions of Chrome and Edge may ask for permission to reach devices on your network the first time. Allow it.
+- **Don't use an HTTPS copy.** A page served over HTTPS, such as GitHub Pages, can't call a printer over plain HTTP.
+- **API key.** If the printer asks for one, paste it under **API key**. Moonraker shows the key at `http://<printer>/access/api_key`.
 
-The safest setup is to serve the viewer from your own computer and allow just that address:
+Why the network address works: when a page's origin isn't in Moonraker's `cors_domains`, Moonraker still accepts it if the page's host is an IP address in its `trusted_clients`. The U1 trusts devices on your local network, which is also why Fluidd works without a login. This was confirmed on a U1 running stock firmware.
 
-```bash
-python -m http.server 8000
-```
-
-Run that in the viewer's folder, open `http://localhost:8000`, and add this to `moonraker.conf`:
-
-```ini
-[authorization]
-cors_domains:
-    http://localhost:8000
-```
-
-If you open `index.html` straight from disk, the browser reports the page's origin as `null`. Adding `null` to `cors_domains` works, but it also lets any other HTML file opened from disk control the printer, so prefer the local server.
-
-Two browser rules also apply:
-
-- A page served over **HTTPS** (such as GitHub Pages) can't call a printer over plain HTTP. Use the viewer from your computer instead.
-- Recent versions of Chrome and Edge may ask for permission to access devices on your local network the first time. Allow it.
-
-Moonraker lets addresses listed in `trusted_clients` in without an API key. If yours does ask for one, paste it under **API key**. Moonraker shows the key at `http://<printer>/access/api_key` to a client it already trusts.
-
-This was tested against a simulated Moonraker server, not a real U1. Snapmaker's stock `moonraker.conf` may not allow other origins until you add one.
+If you can edit Moonraker's settings (for example with the community [Extended Firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware), which reads extra Moonraker settings from `extended/moonraker/` in Fluidd's Configuration tab), you can instead add the page's address to `cors_domains` under `[authorization]`. That lets other setups, such as `localhost`, work too.
 
 ## What it checks
 

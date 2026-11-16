@@ -1591,8 +1591,11 @@ function setSendStatus(kind, html) { const el = $('sendStatus'); el.hidden = !ht
 function sendHeaders() { const k = $('sendKey').value.trim(); return k ? { 'X-Api-Key': k } : {}; }
 function corsHelp(base) {
   const origin = location.origin && location.origin !== 'null' ? location.origin : null;
-  const add = origin ? esc(origin) : '<code>null</code> (this page was opened from a file on disk; serving it with a local web server is safer, see the README)';
-  return `Couldn't reach Moonraker at ${esc(base)}. Check the address opens Fluidd in a new tab and that this computer is on the printer's network. If Fluidd opens but this still fails, the printer is blocking requests from this page: add ${add} to <code>cors_domains</code> under <code>[authorization]</code> in <code>moonraker.conf</code>, then restart Moonraker.${location.protocol === 'https:' && base.startsWith('http:') ? ' This page is served over HTTPS, and browsers block it from calling a printer over plain HTTP. Download index.html and open it from your computer instead.' : ''}`;
+  const local = !origin || /^(localhost|127\.|\[::1\])/.test(location.hostname);
+  const fix = local
+    ? `This page was opened from ${origin ? esc(origin) : 'a file on disk'}, and the printer only accepts pages served from your computer's network address. Serve this folder with <code>python -m http.server 8000 --bind 0.0.0.0</code> and open it at your computer's IP address, for example <code>http://10.0.0.12:8000/index.html</code>. The README has the steps.`
+    : `If Fluidd opens but this still fails, the printer is blocking requests from this page. If you can edit Moonraker's settings, add ${esc(origin)} to <code>cors_domains</code> under <code>[authorization]</code>.`;
+  return `Couldn't reach Moonraker at ${esc(base)}. Check the address opens Fluidd in a new tab and that this computer is on the printer's network. ${fix}${location.protocol === 'https:' && base.startsWith('http:') ? ' This page is served over HTTPS, and browsers block it from calling a printer over plain HTTP. Download index.html and open it from your computer instead.' : ''}`;
 }
 async function mrGet(base, path, ms = 6000) {
   const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), ms);
