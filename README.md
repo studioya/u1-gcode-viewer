@@ -4,7 +4,7 @@ A 3D G-code viewer and pre-print checker for the **Snapmaker U1** tool changer. 
 
 ## Using it
 
-Open `index.html` in a recent desktop browser (Chrome, Edge, Firefox or Safari with WebGL 2). To send prints to the printer, open it through a small local web server instead (see [Sending a print to the printer](#sending-a-print-to-the-printer)). Drop a `.gcode` file on the page or use **Open G-code**. An example two-colour print loads on start.
+Open `index.html` in a recent desktop browser (Chrome, Edge, Firefox or Safari with WebGL 2). To send prints to the printer, open it from `localhost` instead (see [Sending a print to the printer](#sending-a-print-to-the-printer)). Drop a `.gcode` file on the page or use **Open G-code**. An example two-colour print loads on start.
 
 The page loads three.js from jsDelivr and its fonts from Google Fonts, so it needs an internet connection the first time.
 
@@ -18,25 +18,24 @@ The page loads three.js from jsDelivr and its fonts from Google Fonts, so it nee
 
 ## Sending a print to the printer
 
-**Send to printer** uploads the open file to the U1 through Moonraker, the API behind Fluidd. It sends the same upload request Fluidd does, and can start the print straight away. It works with stock U1 firmware, with no changes to the printer's settings, as long as you open the viewer the way described below.
+**Send to printer** uploads the open file to the U1 through Moonraker, the API behind Fluidd. It sends the same upload request Fluidd does, and can start the print straight away. It works with stock U1 firmware and needs no changes to the printer.
 
-### Setting it up
+### Opening the viewer
 
-The browser sends the file straight to the printer, and Moonraker only accepts that from a page served by a computer on your home network. Opening `index.html` by double-clicking it, or from `localhost`, doesn't work. Serve it from your computer's network address instead:
+The browser sends the file straight to the printer, and the U1 only accepts that from a page served on your own computer at `localhost`. Double-clicking `index.html` opens it from disk, which the printer refuses, so serve the folder instead. You need [Python](https://www.python.org/downloads/).
 
-1. Put `index.html` in a folder of its own, for example `C:\U1Viewer`. Everything in the folder you serve can be opened by any device on your network while the server runs, so don't serve your Downloads or user folder.
-2. Find your computer's network address. On Windows, run `ipconfig` and look for **IPv4 Address** under your Wi-Fi or Ethernet adapter, for example `10.0.0.12`.
-3. Start a small web server for that folder (needs [Python](https://www.python.org/downloads/)):
+1. In the viewer's folder, run:
 
    ```bash
-   python -m http.server 8000 --bind 0.0.0.0 --directory "C:\U1Viewer"
+   python -m http.server 8000 --bind 127.0.0.1
    ```
 
-   If Windows asks whether Python can use the network, allow it for **private networks** only.
-4. Open `http://<your address>:8000/index.html`, for example `http://10.0.0.12:8000/index.html`. Use the address, not `localhost`.
-5. Press **Ctrl+C** in that window to stop the server when you're done.
+2. Open **http://localhost:8000**.
+3. Press **Ctrl+C** in that window to stop the server when you're done.
 
-Your computer's address can change after a router restart. If the page stops loading, run `ipconfig` again.
+`--bind 127.0.0.1` keeps the server visible to your computer only. Don't use `--bind 0.0.0.0`: it shares the folder with every device on your network.
+
+**In the Claude desktop app:** the repo includes `.claude/launch.json`. In a Claude Code session in this folder, ask Claude to "open the U1 viewer", and it starts the server and opens the viewer in Claude's browser pane, at `http://localhost:8765`.
 
 ### Sending a file
 
@@ -50,17 +49,23 @@ Some safeguards:
 - If the printer is already printing or paused, or Klipper isn't ready, the file is only uploaded.
 - The printer address (and API key, if you set one) is remembered in this browser only, unless you untick **Remember**.
 
+A print started from the viewer is a real print. Start one only when someone can keep an eye on the printer.
+
 ### If it can't reach the printer
 
-- **Check the page address.** It has to start with your computer's network address, like `http://10.0.0.12:8000`, not `localhost` or `file://`.
+- **Check the page address** starts with `http://localhost` or `http://127.0.0.1`, not `file://`.
 - **Check Fluidd opens** at the printer address from the same computer.
-- **Allow local network access.** Recent versions of Chrome and Edge may ask for permission to reach devices on your network the first time. Allow it.
+- **Allow local network access** if Chrome or Edge asks, for the viewer only.
 - **Don't use an HTTPS copy.** A page served over HTTPS, such as GitHub Pages, can't call a printer over plain HTTP.
 - **API key.** If the printer asks for one, paste it under **API key**. Moonraker shows the key at `http://<printer>/access/api_key`.
 
-Why the network address works: when a page's origin isn't in Moonraker's `cors_domains`, Moonraker still accepts it if the page's host is an IP address in its `trusted_clients`. The U1 trusts devices on your local network, which is also why Fluidd works without a login. This was confirmed on a U1 running stock firmware.
+Why `localhost` works: the U1's stock `moonraker.conf` lists `*://localhost:*`, `*.local` and `*.lan` in `cors_domains`, so pages from those addresses may call the printer. This was checked on a U1 running stock firmware. If your printer's settings differ, add the page's address to `cors_domains` under `[authorization]`, for example through the community [Extended Firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware)'s `extended/moonraker/` folder.
 
-If you can edit Moonraker's settings (for example with the community [Extended Firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware), which reads extra Moonraker settings from `extended/moonraker/` in Fluidd's Configuration tab), you can instead add the page's address to `cors_domains` under `[authorization]`. That lets other setups, such as `localhost`, work too.
+### Security notes
+
+- The viewer can do only what Fluidd can already do from your browser.
+- three.js is pinned with integrity hashes, so the browser refuses a modified copy from the CDN.
+- The U1's stock settings let any device on your network control the printer without a login (`trusted_clients`), and allow any page served from `localhost` to call it. Keep the printer on a network only trusted devices use, never forward its ports to the internet, and decline local-network access requests from websites you don't trust.
 
 ## What it checks
 

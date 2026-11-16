@@ -850,8 +850,9 @@ self.onmessage = async (ev) => {
 };
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<!-- integrity: the browser refuses these files if their contents ever differ from the pinned three.js 0.147.0 release -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js" integrity="sha384-vV17nr/rMaJqmeZkFUzXLpHdQ+ME5QHKdydaqqN+3Ga39RJlNrTatJxHwGV4ml2C" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js" integrity="sha384-I0DMsfimAPIqWT8lF+oA997gRgdUi3jhidoTq3fN0zmn35smXZukD01FLnsPRU9i" crossorigin="anonymous"></script>
 <script>
 (() => {
 'use strict';
@@ -1591,10 +1592,12 @@ function setSendStatus(kind, html) { const el = $('sendStatus'); el.hidden = !ht
 function sendHeaders() { const k = $('sendKey').value.trim(); return k ? { 'X-Api-Key': k } : {}; }
 function corsHelp(base) {
   const origin = location.origin && location.origin !== 'null' ? location.origin : null;
-  const local = !origin || /^(localhost|127\.|\[::1\])/.test(location.hostname);
-  const fix = local
-    ? `This page was opened from ${origin ? esc(origin) : 'a file on disk'}, and the printer only accepts pages served from your computer's network address. Serve this folder with <code>python -m http.server 8000 --bind 0.0.0.0</code> and open it at your computer's IP address, for example <code>http://10.0.0.12:8000/index.html</code>. The README has the steps.`
-    : `If Fluidd opens but this still fails, the printer is blocking requests from this page. If you can edit Moonraker's settings, add ${esc(origin)} to <code>cors_domains</code> under <code>[authorization]</code>.`;
+  const isLocal = origin && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  const fix = !origin
+    ? `This page was opened straight from a file on disk, and printers refuse pages opened that way. Serve this folder on your own computer instead: run <code>python -m http.server 8000 --bind 127.0.0.1</code> in it and open <code>http://localhost:8000</code>. The README has the steps.`
+    : isLocal
+      ? `If Fluidd opens but this still fails, the printer is refusing pages from ${esc(origin)}. A stock U1 accepts <code>localhost</code> on any port; if your printer's settings were changed, add ${esc(origin)} to <code>cors_domains</code> under <code>[authorization]</code> in Moonraker's settings.`
+      : `If Fluidd opens but this still fails, the printer is refusing pages from ${esc(origin)}. Open the viewer from <code>http://localhost</code> on your own computer instead (see the README), or add ${esc(origin)} to <code>cors_domains</code> under <code>[authorization]</code> in Moonraker's settings.`;
   return `Couldn't reach Moonraker at ${esc(base)}. Check the address opens Fluidd in a new tab and that this computer is on the printer's network. ${fix}${location.protocol === 'https:' && base.startsWith('http:') ? ' This page is served over HTTPS, and browsers block it from calling a printer over plain HTTP. Download index.html and open it from your computer instead.' : ''}`;
 }
 async function mrGet(base, path, ms = 6000) {
