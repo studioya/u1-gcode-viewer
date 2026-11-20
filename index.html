@@ -1797,7 +1797,17 @@ if (!glOk || typeof THREE === 'undefined') {
 } else {
   initGL();
   try { const t = localStorage.getItem('u1v-tab'); if (t && tabs.includes(t)) showTab(t); } catch (e) {}
-  load(makeSample(), 'example-two-colour-vase.gcode', true);
+  // ?file=<name> opens a G-code file from the launcher's "U1 jobs" folder (served at /jobs/<name>)
+  const wanted = new URLSearchParams(location.search).get('file');
+  if (wanted) {
+    showLoading(true, `Fetching ${wanted}`);
+    fetch('jobs/' + encodeURIComponent(wanted), { cache: 'no-store' })
+      .then(r => { if (!r.ok) throw new Error(r.status === 404 ? 'it isn\'t in the U1 jobs folder' : 'the server answered ' + r.status); return r.blob(); })
+      .then(b => load(new File([b], wanted, { type: 'text/plain' }), wanted, false))
+      .catch(e => { $('loadTitle').innerHTML = `<span class="err">Couldn't open ${esc(wanted)}: ${esc(e.message)}. Use Open G-code instead.</span>`; });
+  } else {
+    load(makeSample(), 'example-two-colour-vase.gcode', true);
+  }
 }
 })();
 </script>

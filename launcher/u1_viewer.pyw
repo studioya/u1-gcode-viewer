@@ -5,16 +5,22 @@ It serves index.html from this repo on http://localhost:8765, visible to
 this computer only, which the U1's stock Moonraker accepts for uploads.
 
     pythonw u1_viewer.pyw              open the viewer
-    python  u1_viewer.pyw --install    add Desktop and Start menu shortcuts
-    python  u1_viewer.pyw --uninstall  remove them
+    pythonw u1_viewer.pyw --serve      serve only, no window and no idle exit (what runs at sign-in)
+    python  u1_viewer.pyw --install    add Desktop and Start menu shortcuts, and serve at sign-in
+    python  u1_viewer.pyw --uninstall  remove all of them
+
+G-code files in Documents/U1 jobs are served at /jobs/<name>, so
+http://localhost:8765/?file=<name> opens that file in the viewer.
 
 Only the Python standard library is used.
 """
 import os
+import re
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -29,6 +35,10 @@ ICON = os.path.join(HERE, "u1.ico")
 # Only these files are served; everything else (.git, .claude, the launcher) is a 404.
 ALLOWED = {"/": "index.html", "/index.html": "index.html", "/favicon.ico": os.path.join("launcher", "u1.ico")}
 MARKER = b"<title>U1 G-code Viewer</title>"
+# G-code files dropped here can be opened with ?file=<name>. Only plain names with a G-code
+# extension are served, from this folder only (no subfolders, no "..").
+JOBS = os.path.join(os.environ.get("USERPROFILE") or os.path.expanduser("~"), "Documents", "U1 jobs")
+JOB_NAME = re.compile(r"^[^/\\:*?\"<>|]+\.(gcode|gco|g)$", re.IGNORECASE)
 
 
 def message(text, error=False):
@@ -52,12 +62,26 @@ class Handler(SimpleHTTPRequestHandler):
         global last_request
         last_request = time.monotonic()
         path = self.path.split("?", 1)[0].split("#", 1)[0]
+        if path.startswith("/jobs/"):
+            return self.send_job(urllib.parse.unquote(path[len("/jobs/"):]))
         rel = ALLOWED.get(path)
         if rel is None:
             self.send_error(404)
             return None
         self.path = "/" + rel.replace(os.sep, "/")
         return super().send_head()
+
+    def send_job(self, name):
+        full = os.path.join(JOBS, name)
+        if not JOB_NAME.match(name) or ".." in name or not os.path.isfile(full):
+            self.send_error(404)
+            return None
+        f = open(full, "rb")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(os.fstat(f.fileno()).st_size))
+        self.end_headers()
+        return f
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
@@ -121,37 +145,53 @@ def shortcut_paths():
     return [os.path.join(desktop, APP_NAME + ".lnk"), os.path.join(programs, APP_NAME + ".lnk")]
 
 
+def startup_path():
+    startup = os.path.join(os.environ["APPDATA"], "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+    return os.path.join(startup, APP_NAME + " (server).lnk")
+
+
 def ps_quote(s):
     return "'" + s.replace("'", "''") + "'"
+
+
+def make_shortcut(lnk, pyw, args, description):
+    ps = ("$s=(New-Object -ComObject WScript.Shell).CreateShortcut(" + ps_quote(lnk) + ");"
+          "$s.TargetPath=" + ps_quote(pyw) + ";"
+          "$s.Arguments=" + ps_quote(args) + ";"
+          "$s.WorkingDirectory=" + ps_quote(HERE) + ";"
+          "$s.IconLocation=" + ps_quote(ICON + ",0") + ";"
+          "$s.Description=" + ps_quote(description) + ";"
+          "$s.Save()")
+    r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+                       capture_output=True, text=True, timeout=30, creationflags=0x08000000)
+    if r.returncode != 0 or not os.path.isfile(lnk):
+        message(f"Couldn't create the shortcut:\n{lnk}\n\n{r.stderr.strip()}", error=True)
+        return False
+    return True
 
 
 def install():
     pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
     if not os.path.isfile(pyw):
         pyw = sys.executable
-    script = os.path.abspath(__file__)
-    made = []
+    script = '"' + os.path.abspath(__file__) + '"'
     for lnk in shortcut_paths():
-        ps = ("$s=(New-Object -ComObject WScript.Shell).CreateShortcut(" + ps_quote(lnk) + ");"
-              "$s.TargetPath=" + ps_quote(pyw) + ";"
-              "$s.Arguments=" + ps_quote('"' + script + '"') + ";"
-              "$s.WorkingDirectory=" + ps_quote(HERE) + ";"
-              "$s.IconLocation=" + ps_quote(ICON + ",0") + ";"
-              "$s.Description=" + ps_quote("Open the U1 G-code Viewer") + ";"
-              "$s.Save()")
-        r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
-                           capture_output=True, text=True, timeout=30, creationflags=0x08000000)
-        if r.returncode != 0 or not os.path.isfile(lnk):
-            message(f"Couldn't create the shortcut:\n{lnk}\n\n{r.stderr.strip()}", error=True)
+        if not make_shortcut(lnk, pyw, script, "Open the U1 G-code Viewer"):
             return 1
-        made.append(lnk)
-    message("Added the U1 Viewer shortcut to your Desktop and Start menu.\n\n"
+    if not make_shortcut(startup_path(), pyw, script + " --serve", "Serve the U1 G-code Viewer on localhost"):
+        return 1
+    os.makedirs(JOBS, exist_ok=True)
+    # start the background server now, so it's there before the next sign-in
+    subprocess.Popen([pyw, os.path.abspath(__file__), "--serve"], close_fds=True, creationflags=0x08000000)
+    message("Added the U1 Viewer shortcut to your Desktop and Start menu, and set the viewer to run in the "
+            "background whenever you sign in, at http://localhost:8765.\n\n"
+            f"G-code files in {JOBS} open with http://localhost:8765/?file=<name>.\n\n"
             "To pin it to the taskbar: open Start, right-click U1 Viewer, then Pin to taskbar.")
     return 0
 
 
 def uninstall():
-    removed = [p for p in shortcut_paths() if os.path.isfile(p)]
+    removed = [p for p in shortcut_paths() + [startup_path()] if os.path.isfile(p)]
     for p in removed:
         os.remove(p)
     message("Removed the U1 Viewer shortcuts." if removed else "There were no U1 Viewer shortcuts to remove.")
@@ -167,11 +207,17 @@ def main():
     if not os.path.isfile(os.path.join(ROOT, "index.html")):
         message(f"index.html wasn't found next to the launcher folder:\n{ROOT}", error=True)
         return 1
+    serve_only = "--serve" in sys.argv
     try:
         port, srv = start_server()
     except Exception as e:
-        message(f"Couldn't start the viewer: {e}", error=True)
+        if not serve_only:
+            message(f"Couldn't start the viewer: {e}", error=True)
         return 1
+    if serve_only:
+        while srv is not None:  # run until sign-out; if another copy is serving, just exit
+            time.sleep(3600)
+        return 0
     open_window(f"http://localhost:{port}/")
     if srv is None:
         return 0  # another copy is already serving; it keeps running

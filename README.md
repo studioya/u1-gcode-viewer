@@ -34,6 +34,10 @@ Clicking the shortcut opens the viewer in its own Chrome or Edge window, without
 - To remove the shortcuts, run `python launcher\u1_viewer.pyw --uninstall`.
 - If you move this folder, run **Install shortcuts.cmd** again.
 
+**Running in the background.** Install shortcuts.cmd also starts the viewer in the background whenever you sign in to Windows, at `http://localhost:8765`, with no window. The shortcut then just opens a window onto it. `python launcher\u1_viewer.pyw --uninstall` removes the sign-in entry along with the shortcuts.
+
+**Opening a file by name.** G-code files saved in `Documents\U1 jobs` open with `http://localhost:8765/?file=<file name>`. Only that folder is served, only files ending in `.gcode`, `.gco` or `.g`, and only to this computer. This is how Claude opens a file in the viewer for you: it saves the file there and opens the address in the Claude desktop app's browser pane.
+
 **Anywhere: run a server yourself.**
 
 1. In the viewer's folder, run:

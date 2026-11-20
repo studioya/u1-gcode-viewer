@@ -4,7 +4,7 @@
     {
       "name": "U1 Viewer",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8765", "--bind", "127.0.0.1"],
+      "runtimeArgs": ["launcher/u1_viewer.pyw", "--serve"],
       "port": 8765
     }
   ]
