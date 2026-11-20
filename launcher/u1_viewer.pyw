@@ -37,7 +37,27 @@ ALLOWED = {"/": "index.html", "/index.html": "index.html", "/favicon.ico": os.pa
 MARKER = b"<title>U1 G-code Viewer</title>"
 # G-code files dropped here can be opened with ?file=<name>. Only plain names with a G-code
 # extension are served, from this folder only (no subfolders, no "..").
-JOBS = os.path.join(os.environ.get("USERPROFILE") or os.path.expanduser("~"), "Documents", "U1 jobs")
+def documents_dirs():
+    """Windows' Documents folder (often moved into OneDrive), then the plain one under the user folder."""
+    dirs = []
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders") as k:
+            dirs.append(os.path.expandvars(winreg.QueryValueEx(k, "Personal")[0]))
+    except Exception:
+        pass
+    dirs.append(os.path.join(os.environ.get("USERPROFILE") or os.path.expanduser("~"), "Documents"))
+    out = []
+    for d in map(os.path.abspath, dirs):
+        if os.path.normcase(d) not in map(os.path.normcase, out):
+            out.append(d)
+    return out
+
+
+# Files are looked up in every candidate folder; the first is where --install creates it.
+JOBS_DIRS = [os.path.join(d, "U1 jobs") for d in documents_dirs()]
+JOBS = JOBS_DIRS[0]
 JOB_NAME = re.compile(r"^[^/\\:*?\"<>|]+\.(gcode|gco|g)$", re.IGNORECASE)
 
 
@@ -72,8 +92,11 @@ class Handler(SimpleHTTPRequestHandler):
         return super().send_head()
 
     def send_job(self, name):
-        full = os.path.join(JOBS, name)
-        if not JOB_NAME.match(name) or ".." in name or not os.path.isfile(full):
+        if not JOB_NAME.match(name) or ".." in name:
+            self.send_error(404)
+            return None
+        full = next((p for p in (os.path.join(d, name) for d in JOBS_DIRS) if os.path.isfile(p)), None)
+        if full is None:
             self.send_error(404)
             return None
         f = open(full, "rb")

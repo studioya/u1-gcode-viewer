@@ -132,3 +132,7 @@ Not affiliated with or endorsed by Snapmaker.
 ## License
 
 [MIT](LICENSE)
+
+## Claude skill
+
+`skill/open-u1-viewer` is the Claude skill that opens this viewer from a chat: it saves a G-code file into `Documents jobs` and opens `http://localhost:8765/?file=<name>` in the Claude desktop app's browser pane. To install or update it, upload `skill/open-u1-viewer.zip` in Claude under Settings, Capabilities, Skills.
