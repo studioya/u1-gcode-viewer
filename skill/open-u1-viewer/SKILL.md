@@ -33,11 +33,13 @@ Never substitute an artifact copy, an older artifact version, or a page in Chrom
 
 - **The page doesn't load at all (connection refused).** The background server isn't running. Ask Yarden to click the **U1 Viewer** shortcut once, which starts it. If they never set it up, they double-click **Install shortcuts.cmd** in the repo folder. Then retry step 3. Don't try to start the server yourself from a cloud session.
 - **"Couldn't open <file>: it isn't in the U1 jobs folder".** The file isn't there, or the name in the address doesn't match it exactly. Check with `device_list_dir` and retry.
+- **Send to printer says "Couldn't reach Moonraker" and mentions `cors_domains`.** The background server is an old version without the relay. Ask Yarden to end `pythonw.exe` in Task Manager and click the **U1 Viewer** shortcut, or to sign out of Windows and back in. Then retry.
+- **"Couldn't reach the printer at 10.0.0.18: timed out".** The printer is off or asleep, or the laptop isn't on its network.
 - **The browser pane is offline.** The Claude desktop app isn't open on the laptop. Say so; don't fall back to Chrome or an artifact.
 
 ## Sending to the printer
 
-The viewer sends prints itself, through the U1's Moonraker at `10.0.0.18`.
+The viewer sends prints itself, through the U1's Moonraker at `10.0.0.18`. The localhost server relays the requests, so this works from the browser pane even though the pane can't reach the local network directly. Don't try to reach `10.0.0.18` from the pane yourself.
 
 1. Click **Send to printer** in the viewer.
 2. If the address field is empty, enter `10.0.0.18` and leave **Remember the address in this browser** ticked.

@@ -12,10 +12,18 @@ this computer only, which the U1's stock Moonraker accepts for uploads.
 G-code files in Documents/U1 jobs are served at /jobs/<name>, so
 http://localhost:8765/?file=<name> opens that file in the viewer.
 
+/relay/... forwards the viewer's printer requests to Moonraker, so the page never has to
+reach the printer itself. Browsers that block pages from the local network (like the
+browser pane a Claude chat session drives) can still send prints this way.
+
 Only the Python standard library is used.
 """
+import http.client
+import ipaddress
+import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -59,6 +67,24 @@ def documents_dirs():
 JOBS_DIRS = [os.path.join(d, "U1 jobs") for d in documents_dirs()]
 JOBS = JOBS_DIRS[0]
 JOB_NAME = re.compile(r"^[^/\\:*?\"<>|]+\.(gcode|gco|g)$", re.IGNORECASE)
+
+
+# The printer relay forwards only the requests the viewer makes, only to addresses on the
+# local network (never the internet or this computer).
+RELAY_ROUTES = {("GET", "/server/info"), ("GET", "/printer/objects/query"), ("POST", "/server/files/upload")}
+RELAY_TIMEOUT = {"GET": 5, "POST": 120}  # seconds per network step; the viewer gives up on GETs after 6
+
+
+def private_host(host):
+    """True if every address the name resolves to is on a private or link-local network."""
+    try:
+        addrs = {ai[4][0] for ai in socket.getaddrinfo(host, None)}
+    except OSError:
+        return False
+    def ok(a):
+        ip = ipaddress.ip_address(a.split("%", 1)[0])
+        return (ip.is_private or ip.is_link_local) and not ip.is_loopback and not ip.is_unspecified
+    return bool(addrs) and all(ok(a) for a in addrs)
 
 
 def message(text, error=False):
@@ -105,6 +131,75 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(os.fstat(f.fileno()).st_size))
         self.end_headers()
         return f
+
+    # ----- printer relay -----
+    def do_GET(self):
+        if self.path.startswith("/relay/"):
+            return self.relay("GET")
+        return super().do_GET()
+
+    def do_POST(self):
+        if self.path.startswith("/relay/"):
+            return self.relay("POST")
+        self.send_error(405)
+
+    def relay_error(self, status, text):
+        body = ('{"error":{"message":' + json.dumps(text) + '}}').encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def relay(self, method):
+        """Forward a Moonraker request to the printer, so the page only ever talks to localhost."""
+        global last_request
+        last_request = time.monotonic()
+        # Only the viewer itself may use this: a custom header makes browsers refuse it to other
+        # sites (they'd need a CORS preflight, which is never granted), and the Host and Origin
+        # checks stop DNS-rebinding pages.
+        port = self.server.server_address[1]
+        local = {f"localhost:{port}", f"127.0.0.1:{port}"}
+        origin = self.headers.get("Origin")
+        if (self.headers.get("X-U1-Relay") != "1" or self.headers.get("Host") not in local
+                or (origin is not None and urllib.parse.urlsplit(origin).netloc not in local)):
+            return self.relay_error(403, "Only the U1 viewer on this computer can use the printer relay.")
+        path = self.path[len("/relay"):]
+        if path == "/ping":  # lets the viewer know the relay is here
+            return self.relay_error(200, "relay")
+        if (method, path.split("?", 1)[0]) not in RELAY_ROUTES:
+            return self.relay_error(404, "The relay doesn't forward that request.")
+        target = urllib.parse.urlsplit(self.headers.get("X-U1-Printer", ""))
+        if target.scheme not in ("http", "https") or not target.hostname or not private_host(target.hostname):
+            return self.relay_error(400, "The printer's address must be on your own network, like 10.0.0.18.")
+        conn_cls = http.client.HTTPSConnection if target.scheme == "https" else http.client.HTTPConnection
+        conn = conn_cls(target.hostname, target.port, timeout=RELAY_TIMEOUT[method])
+        try:
+            conn.putrequest(method, path, skip_accept_encoding=True)
+            for h in ("X-Api-Key", "Content-Type", "Accept"):
+                if self.headers.get(h):
+                    conn.putheader(h, self.headers[h])
+            length = int(self.headers.get("Content-Length") or 0)
+            if method == "POST":
+                conn.putheader("Content-Length", str(length))
+            conn.endheaders()
+            while length > 0:  # stream the upload straight through
+                chunk = self.rfile.read(min(length, 256 * 1024))
+                if not chunk:
+                    break
+                conn.send(chunk)
+                length -= len(chunk)
+            resp = conn.getresponse()
+            body = resp.read()
+        except (OSError, http.client.HTTPException) as e:
+            return self.relay_error(502, f"Couldn't reach the printer at {target.hostname}: {e}")
+        finally:
+            conn.close()
+        self.send_response(resp.status)
+        self.send_header("Content-Type", resp.getheader("Content-Type", "application/json"))
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")

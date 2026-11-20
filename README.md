@@ -71,6 +71,10 @@ A print started from the viewer is a real print. Start one only when someone can
 
 ### If it can't reach the printer
 
+When the viewer comes from the **U1 Viewer** launcher, the launcher relays printer requests itself, so the page only talks to `localhost`. That works in browsers that block pages from the local network, such as the browser pane a Claude chat session drives. The relay forwards only the viewer's three requests (printer info, printer status, upload), only to addresses on your own network, and only for the viewer on this computer. Other websites, the internet and this computer itself are refused. If a printer error mentions `cors_domains`, the launcher running in the background is an older version: sign out of Windows and back in, or end `pythonw.exe` in Task Manager and click the shortcut.
+
+Without the launcher, for example with `python -m http.server`, the page calls the printer directly:
+
 - **Check the page address** starts with `http://localhost` or `http://127.0.0.1`, not `file://`.
 - **Check Fluidd opens** at the printer address from the same computer.
 - **Allow local network access** if Chrome or Edge asks, for the viewer only.

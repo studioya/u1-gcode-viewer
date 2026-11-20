@@ -1577,7 +1577,8 @@ window.addEventListener('drop', (e) => { e.preventDefault(); dragDepth = 0; $('d
 
 // ---------- send to printer (Moonraker, the API behind Fluidd) ----------
 // Uploads the open file with POST /server/files/upload, the same request Fluidd makes.
-// The browser talks to the printer directly, so Moonraker has to allow this page's origin (cors_domains).
+// From the launcher, requests go through its /relay/; otherwise the browser talks to the printer
+// directly, and Moonraker has to allow this page's origin (cors_domains).
 const SEND_KEY = 'u1v-printer';
 const sendDlg = $('sendDlg');
 function loadPrinterPrefs() { try { return JSON.parse(localStorage.getItem(SEND_KEY) || '{}') || {}; } catch (e) { return {}; } }
@@ -1600,12 +1601,27 @@ function corsHelp(base) {
       : `If Fluidd opens but this still fails, the printer is refusing pages from ${esc(origin)}. Open the viewer from <code>http://localhost</code> on your own computer instead (see the README), or add ${esc(origin)} to <code>cors_domains</code> under <code>[authorization]</code> in Moonraker's settings.`;
   return `Couldn't reach Moonraker at ${esc(base)}. Check the address opens Fluidd in a new tab and that this computer is on the printer's network. ${fix}${location.protocol === 'https:' && base.startsWith('http:') ? ' This page is served over HTTPS, and browsers block it from calling a printer over plain HTTP. Download index.html and open it from your computer instead.' : ''}`;
 }
+// When the page comes from the U1 Viewer launcher, its /relay/ forwards printer requests, so the
+// page only talks to localhost. That works in browsers that block pages from the local network.
+let relayCheck = null;
+function hasRelay() {
+  if (!relayCheck) relayCheck = /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+    ? fetch('relay/ping', { headers: { 'X-U1-Relay': '1' }, cache: 'no-store' }).then(r => r.ok).catch(() => false)
+    : Promise.resolve(false);
+  return relayCheck;
+}
+async function printerRequest(base, path) {
+  return (await hasRelay())
+    ? { url: 'relay' + path, headers: Object.assign({ 'X-U1-Relay': '1', 'X-U1-Printer': base }, sendHeaders()), relay: true }
+    : { url: base + path, headers: sendHeaders(), relay: false };
+}
 async function mrGet(base, path, ms = 6000) {
   const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), ms);
   try {
-    const r = await fetch(base + path, { headers: sendHeaders(), signal: ctl.signal, cache: 'no-store' });
+    const req = await printerRequest(base, path);
+    const r = await fetch(req.url, { headers: req.headers, signal: ctl.signal, cache: 'no-store' });
     let body = null; try { body = await r.json(); } catch (e) {}
-    if (!r.ok) { const msg = body && body.error && body.error.message || r.statusText || ('HTTP ' + r.status); const err = new Error(msg); err.status = r.status; throw err; }
+    if (!r.ok) { const msg = body && body.error && body.error.message || r.statusText || ('HTTP ' + r.status); const err = new Error(msg); err.status = r.status; err.relay = req.relay && [400, 403, 502].includes(r.status); throw err; }
     return body && 'result' in body ? body.result : body;
   } finally { clearTimeout(tm); }
 }
@@ -1621,6 +1637,7 @@ async function printerStatus(base) {
 function authHelp(e) { return e && (e.status === 401 || e.status === 403) ? ' The printer wants an API key: open "API key", paste the key Moonraker shows at /access/api_key, and try again.' : ''; }
 function describeErr(base, e) {
   if (e && e.name === 'AbortError') return `The printer at ${esc(base)} didn't answer within a few seconds. Check the address and that the printer is on.`;
+  if (e && e.relay) return `${esc(e.message.replace(/[.\s]*$/, '.'))} Check that the printer is on and that <a href="${esc(base)}" target="_blank" rel="noopener">${esc(base)}</a> opens Fluidd.`;
   if (e && e.status) return `The printer answered with an error: ${esc(e.message)}.${authHelp(e)}`;
   return corsHelp(base);
 }
@@ -1684,9 +1701,10 @@ async function sendToPrinter() {
   fd.append('file', srcBlob, name);
   $('sendProg').hidden = false; $('sendProgBar').style.width = '0%';
   setSendStatus('', `Uploading ${esc(name)}…`);
+  const req = await printerRequest(base, '/server/files/upload');
   const xhr = sendXhr = new XMLHttpRequest();
-  xhr.open('POST', base + '/server/files/upload');
-  const hk = sendHeaders(); Object.keys(hk).forEach(k => xhr.setRequestHeader(k, hk[k]));
+  xhr.open('POST', req.url);
+  Object.keys(req.headers).forEach(k => xhr.setRequestHeader(k, req.headers[k]));
   xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) { $('sendProgBar').style.width = (100 * ev.loaded / ev.total).toFixed(1) + '%'; setSendStatus('', `Uploading ${esc(name)}: ${fmtBytes(ev.loaded)} of ${fmtBytes(ev.total)}`); } };
   const done = () => { sendXhr = null; busy(false); };
   xhr.onload = () => {
@@ -1694,7 +1712,7 @@ async function sendToPrinter() {
     let body = null; try { body = JSON.parse(xhr.responseText); } catch (e) {}
     if (xhr.status < 200 || xhr.status >= 300) {
       const msg = body && body.error && body.error.message || xhr.statusText || ('HTTP ' + xhr.status);
-      setSendStatus('bad', `The printer refused the upload: ${esc(msg)}.${authHelp({ status: xhr.status })}`); return;
+      setSendStatus('bad', req.relay && xhr.status === 502 ? `The upload didn't reach the printer: ${esc(msg)}. Nothing was printed.` : `The printer refused the upload: ${esc(msg)}.${authHelp({ status: xhr.status })}`); return;
     }
     const r = body && body.result && !body.item ? body.result : body || {};
     const path = r.item && r.item.path || name;
