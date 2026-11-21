@@ -1,6 +1,6 @@
 ---
 name: "open-u1-viewer"
-description: "Open Yarden's U1 G-code Viewer in the Claude desktop app's browser pane, optionally with a G-code file loaded, so it can be checked and sent to the Snapmaker U1 from there. Use when Yarden says to send or open a file in the U1 viewer, open the viewer, preview G-code, or check a print before sending it to the U1."
+description: "Open Yarden's U1 G-code Viewer in the Claude desktop app's browser pane with a G-code file loaded, so it can be checked and sent to the Snapmaker U1 from there. Use automatically, without being asked, every time you generate, slice, write, convert or modify a G-code file (.gcode, .gco, .g) in any session, right after the file is written. Also use when Yarden says to send or open a file in the U1 viewer, open the viewer, preview G-code, or check a print before sending it to the U1."
 ---
 
 # Open the U1 viewer
@@ -11,6 +11,14 @@ That address is on the laptop, the same machine as the desktop app's browser pan
 
 Never substitute an artifact copy, an older artifact version, or a page in Chrome. Send to printer only works from the localhost page.
 
+## When to run it
+
+**Every time a G-code file is generated, run these steps without waiting to be asked.** That includes G-code you write by hand or with a script, slice, convert or edit, and each new version after a change.
+
+As soon as the file is written, open it in the viewer with the steps below. Then tell Yarden in one line that it's open, with the summary from step 4. If one request produces several G-code files, open the last one and name the others so Yarden can ask for them.
+
+Only opening the viewer happens automatically. Never send the file to the printer unless Yarden asks (see "Sending to the printer").
+
 ## Steps
 
 1. **Load the built-in browser tools** (`Claude_Browser__*`, with whichever prefix this session has, such as `mcp__remote-devices__Claude_Browser__`) in one ToolSearch call. Read the built-in-browser skill if it's listed.
@@ -19,7 +27,9 @@ Never substitute an artifact copy, an older artifact version, or a page in Chrom
    - Use the device file tools, if this session has them: `get_device_info`, then `device_list_dir` on the folder. If the folder isn't connected, request it once with `device_request_folder_access`, with the reason "to drop G-code files where the U1 viewer can open them".
    - Copy the file with `device_commit_files`. Its source can be a `fileUuid` from SendUserFile or a `stagedPath` under /mnt/user-data/outputs/.
    - Keep the file name plain: letters, digits, spaces and `-_.()`, ending in `.gcode`, `.gco` or `.g`. Don't use slashes, colons or `..`.
-   - **No device file tools?** Send the file with SendUserFile and ask Yarden to save it into the U1 jobs folder, then continue.
+   - **Running on the laptop itself** (a Claude Code session on Windows, with a shell and file tools)? Write or copy the file straight into `C:\Users\yarde\OneDrive\Documents\U1 jobs`, creating the folder if it's missing.
+   - **A new version of the same print?** Give it a new name, for example by adding `v2`, so the viewer doesn't show an old copy.
+   - **No way to write files on the laptop?** Send the file with SendUserFile and ask Yarden to save it into the U1 jobs folder, then continue.
 
 3. **Open the viewer in the browser pane** with `preview_start` (or `navigate` if a pane tab is already open):
    - with a file: `http://localhost:8765/?file=<URL-encoded file name>`, for example `?file=benchy%20PLA.gcode`
